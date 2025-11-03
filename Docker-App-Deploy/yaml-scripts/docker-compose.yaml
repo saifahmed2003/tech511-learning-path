@@ -1,0 +1,23 @@
+services:
+  mongo:
+    image: mongo:6.0                # stable MongoDB image version
+    container_name: mongo
+    restart: always
+    ports:
+      - "27017:27017"               # expose MongoDB port
+    volumes:
+      - mongo_data:/data/db         # persist MongoDB data even if container stops
+
+  app:
+    image: saifahmed2003/tech511-sparta-app:v1   # use your Docker Hub image with tag v1
+    container_name: app
+    restart: always
+    ports:
+      - "3000:3000"                 # map container port 3000 to your localhost
+    depends_on:
+      - mongo                       # ensure Mongo starts first
+    environment:
+      - DB_HOST=mongodb://mongo:27017/posts  # environment variable to link to MongoDB
+
+volumes:
+  mongo_data:                       # declared volume for Mongo persistence
