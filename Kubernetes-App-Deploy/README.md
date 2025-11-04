@@ -26,6 +26,7 @@ This goal of this project is to containerise the deployment of the Sparta test a
     - [Maintained images](#maintained-images)
       - [What are they](#what-are-they)
       - [Pros and cons of using maintained images for your base container images](#pros-and-cons-of-using-maintained-images-for-your-base-container-images)
+    - [Sources](#sources)
   - [2. Get Kubernetes running using Docker Desktop](#2-get-kubernetes-running-using-docker-desktop)
   - [3. Nginx deployment with NodePort service](#3-nginx-deployment-with-nodeport-service)
     - [3a. Create Nginx deployment only](#3a-create-nginx-deployment-only)
@@ -225,7 +226,7 @@ Deployments
 | **Community & Support** | - Large community and vendor support for patches and usage issues.<br>- Documentation and tooling integrations readily available. | - Vendor deprecations may force migration sooner than expected. |
 
 
-**Sources:**
+### Sources
 
 https://www.ibm.com/think/insights/kubernetes-benefits#:~:text=Kubernetes%20helps%20you%20run%20your,to%20your%20software%20without%20downtime.
 

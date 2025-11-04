@@ -21,7 +21,7 @@ This goal of this project is to containerise the deployment of the Sparta test a
       - [Alternatives](#alternatives)
       - [How it works (Docker architecture/API)](#how-it-works-docker-architectureapi)
       - [Success story using Docker](#success-story-using-docker)
-      - [Sources](#sources)
+    - [Sources](#sources)
   - [3. Learn to manage Docker containers locally](#3-learn-to-manage-docker-containers-locally)
     - [3a. Task: Run and pull your first image](#3a-task-run-and-pull-your-first-image)
     - [3b. Run nginx web server in a Docker container](#3b-run-nginx-web-server-in-a-docker-container)
@@ -197,7 +197,7 @@ Virtual Machines
   * Solution: Update monolithic infrastructure to containerized approach with Docker Business.
 
 ---
-#### Sources
+### Sources
 
 https://www.sumologic.com/blog/microservices-architecture-docker-containers
 
