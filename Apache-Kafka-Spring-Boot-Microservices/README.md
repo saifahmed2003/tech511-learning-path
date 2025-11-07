@@ -46,7 +46,32 @@ All from the very beginning, to help you learn how to create Event-Driven Micros
     - [Apache Kafka broker: Leader and Follower roles and  Leadership balance](#apache-kafka-broker-leader-and-follower-roles-and--leadership-balance)
     - [Quiz 3](#quiz-3)
     - [Download Apache Kafka](#download-apache-kafka)
-    - [](#)
+    - [Start single Apache Kafka broker with KRaft](#start-single-apache-kafka-broker-with-kraft)
+    - [Multiple Kafka broker: Configuration Files](#multiple-kafka-broker-configuration-files)
+    - [Multiple Kafka broker: Configuration Files](#multiple-kafka-broker-configuration-files-1)
+    - [Starting multiple Kafka broker with KRaft](#starting-multiple-kafka-broker-with-kraft)
+    - [Stopping Apache Kafka brokers](#stopping-apache-kafka-brokers)
+  - [Kafka CLI: Topics](#kafka-cli-topics)
+    - [Introduction to Kafka Topic CLI](#introduction-to-kafka-topic-cli)
+    - [Creating a new Kafka topic](#creating-a-new-kafka-topic)
+    - [List and describe Kafka topics](#list-and-describe-kafka-topics)
+    - [Deleting Kafka Topic](#deleting-kafka-topic)
+  - [Kafka CLI: Producers](#kafka-cli-producers)
+    - [Introduction to Kafka Producer CLI](#introduction-to-kafka-producer-cli)
+    - [Producing Kafka Message without a Key](#producing-kafka-message-without-a-key)
+    - [Sending Kafka Message as a Key:Value Pair](#sending-kafka-message-as-a-keyvalue-pair)
+  - [Kafka CLI: Consumers](#kafka-cli-consumers)
+    - [Introduction to Kafka Consumer CLI](#introduction-to-kafka-consumer-cli)
+    - [Consuming messages from Kafka topic from the beginning](#consuming-messages-from-kafka-topic-from-the-beginning)
+    - [Consuming new Kafka messages only](#consuming-new-kafka-messages-only)
+    - [Consuming Key:Value pair messages from Kafka topic](#consuming-keyvalue-pair-messages-from-kafka-topic)
+    - [Consuming Kafka messages in order](#consuming-kafka-messages-in-order)
+  - [Kafka Producer - Spring Boot Microservice](#kafka-producer---spring-boot-microservice)
+    - [Introduction to Kafka Producer](#introduction-to-kafka-producer)
+    - [Kafka Producer - Introduction to synchronous communication style](#kafka-producer---introduction-to-synchronous-communication-style)
+    - [Kafka Producer - A use case for asynchronous communication style](#kafka-producer---a-use-case-for-asynchronous-communication-style)
+    - [Quiz 4](#quiz-4)
+    - [Creating a new Spring Boot project](#creating-a-new-spring-boot-project)
 
 ---
 ## Introduction to Apache Kafka
@@ -167,33 +192,481 @@ As per the latest update of this quiz, the number of partitions can only be incr
 * each partition will have its own leader and its own follower
 ---
 ### Quiz 3
-**Q1: What is the primary role of a broker in Apache Kafka?** 
-**A: To store, manage, and distribute messages in the Kafka messaging system**  
+**Q1: What is the primary role of a broker in Apache Kafka?**   
+**A: To store, manage, and distribute messages in the Kafka messaging system**    
 A Kafka broker is an Apache Kafka component that stores, manages, and distributes messages in the Kafka messaging system. A broker hosts a set of partitions and handles incoming requests to write new events to those partitions or read events from them. It also handles replication of partitions between other brokers. This is the main function of a broker, as it enables Kafka to provide high-throughput, low-latency, and fault-tolerant data delivery.  
 
-**Q2: How does Kafka ensure message durability?**
-**A: By replicating messages across multiple brokers**  
+**Q2: How does Kafka ensure message durability?**   
+**A: By replicating messages across multiple brokers**    
 Kafka ensures message durability through replication. Each message published to a Kafka topic can be replicated across multiple brokers. This means that even if one broker fails, the data remains available on other brokers. Replication is a key feature in Kafka that guarantees high availability and durability of data.  
 
-**Q3: What happens when a Kafka broker goes down?**  
-**A: Kafka redistributes the load to other brokers**  
+**Q3: What happens when a Kafka broker goes down?**   
+**A: Kafka redistributes the load to other brokers**    
 If a broker in a Kafka cluster goes down, Kafka redistributes the workload among the remaining brokers. This includes reassigning the leader for the partitions that were on the failed broker. Kafka’s distributed nature allows it to handle failures gracefully and maintain continuous operation.  
 
-**Q4: What is the role of a Leader broker in a Kafka cluster?**  
-**A: To handle all read and write requests for a specific partition**  
+**Q4: What is the role of a Leader broker in a Kafka cluster?**   
+**A: To handle all read and write requests for a specific partition**   
 In Kafka, each partition of a topic has one leader broker. The leader handles all read and write requests for that partition. This centralizes data management, ensuring consistency and efficiency in data handling.  
 
-**Q5: What is the role of a Follower broker in a Kafka cluster?**  
-**A: To replicate data from the leader broker for the assigned partitions**  
+**Q5: What is the role of a Follower broker in a Kafka cluster?**   
+**A: To replicate data from the leader broker for the assigned partitions**   
 The primary role of a follower broker is to replicate data from the leader broker for the assigned partitions. Followers continually fetch data from their leader to ensure data redundancy and high availability. If the leader broker fails, a follower can be elected as the new leader, ensuring the partition stays available and no data is lost.  
 
-**Q6: What happens when a leader broker for a partition becomes unavailable?**  
-**A: A follower broker is automatically elected as the new leader**  
+**Q6: What happens when a leader broker for a partition becomes unavailable?**    
+**A: A follower broker is automatically elected as the new leader**   
 Kafka’s high availability design includes automatic leader election. When a leader broker for a partition becomes unavailable, one of its follower brokers—already replicating the data—is promoted as the new leader. This guarantees continuous availability and accessibility of the partition.  
 
 ---
 ### Download Apache Kafka
-Download: https://kafka.apache.org/downloads
+* Download: https://kafka.apache.org/downloads
+* Version 3.6.0
 
 ---
-###
+### Start single Apache Kafka broker with KRaft
+Navigate to the kafka  folder
+```
+cd kafka_2.13-3.6.1/
+```
+Generate a unique ID for your Kafka cluster
+```
+./bin/kafka-storage.sh random-uuid
+```
+You should see something like this
+```
+kq23bZZYRbmYy2XQ0y2m4A
+```
+Format log directories using this unique ID
+```
+./bin/kafka-storage.sh format -t kq23bZZYRbmYy2XQ0y2m4A -c config/kraft/server.properties
+```
+You will see this error
+```
+log4j:ERROR Could not read configuration file from URL
+```
+To fix this you must create the missing config file that the tools need
+```
+cp config/log4j.properties config/tools-log4j.properties
+```
+Fix the log.dirs path for Windows
+```
+nano config/kraft/server.properties
+```
+Right now, this line in your config uses a Linux-style temp path:
+```
+log.dirs=/tmp/kraft-combined-logs
+```
+Change it to:
+```
+log.dirs=C:\\kafka-logs
+```
+Reformat the storage directory
+```
+rm -rf /c/kafka-logs
+```
+Run
+```
+./bin/kafka-storage.sh format -t kq23bZZYRbmYy2XQ0y2m4A -c config/kraft/server.properties --ignore-formatted
+```
+You should see
+```
+Formatting C:\kafka-logs with metadata.version 3.6-IV2.
+```
+Now Patch the startup script
+```
+nano bin/kafka-server-start.sh
+```
+Change this line
+```
+EXTRA_ARGS=${EXTRA_ARGS-'-name kafkaServer -loggc'}
+```
+To this
+```
+EXTRA_ARGS=${EXTRA_ARGS-'-name kafkaServer'}
+```
+
+Save the file and re‑run:
+```
+./bin/kafka-server-start.sh config/kraft/server.properties
+```
+You should see
+```
+[2025-11-06 13:48:35,679] INFO [KafkaRaftServer nodeId=1] Kafka Server started (kafka.server.KafkaRaftServer)
+```
+To stop your current kafka server press:
+```
+CTRL + C
+```
+---
+### Multiple Kafka broker: Configuration Files
+Go to "C:\Users\sohai\kafka_2.13-3.6.1\config\kraft" and duplicate `server.properties` 3 times and rename them as shown in the image `server-1.properties`, `server-2.properties` and `server-3.properties`
+![multiple-kafka-broker.png](../images/multiple-kafka-broker.png)
+
+Open all 3 config files in a text editor and change the `node_id` for all 3 files
+```
+node.id=<INSERT SERVER NUMBER>
+```
+Change the listeners in server 2 to:
+```
+listeners=PLAINTEXT://:9094,CONTROLLER://:9095
+```
+Change the listeners in server 3 to:
+```
+listeners=PLAINTEXT://:9096,CONTROLLER://:9097
+```
+Change controller.quorom.voters in all 3 files to:
+```
+controller.quorum.voters=1@localhost:9093,2@localhost:9095,3@localhost:9097
+```
+Change the active listeners in server 2 to:
+```
+advertised.listeners=PLAINTEXT://localhost:9094
+```
+Change the active listeners in server 3 to:
+```
+advertised.listeners=PLAINTEXT://localhost:9096
+```
+In all 3 files change the log.dirs to:
+```
+log.dirs=/tmp/server-<INSERT SERVER NUMBER>/kraft-combined-logs
+```
+
+---
+### Multiple Kafka broker: Configuration Files
+In GitBash Run:
+```
+./bin/kafka-storage.sh random-uuid
+```
+You should see something like
+```
+f9R72gZhQi6L_dRJ4gvTWQ
+```
+Run
+```
+./bin/kafka-storage.sh format -t f9R72gZhQi6L_dRJ4gvTWQ -c config/kraft/server-1.properties
+```
+Then
+```
+./bin/kafka-storage.sh format -t f9R72gZhQi6L_dRJ4gvTWQ -c config/kraft/server-2.properties
+```
+Finally
+```
+./bin/kafka-storage.sh format -t f9R72gZhQi6L_dRJ4gvTWQ -c config/kraft/server-3.properties
+```
+You should see for all
+```
+Formatting /tmp/server-<INSERT SERVER NUMBER>/kraft-combined-logs with metadata.version 3.6-IV2.
+```
+
+---
+### Starting multiple Kafka broker with KRaft
+
+In 3 separate GitBash windows run:
+```
+./bin/kafka-server-start.sh config/kraft/server-<INSERT SERVER NUMBER>.properties
+```
+You should see all 3 up and running
+
+---
+### Stopping Apache Kafka brokers
+* Stopping Producers and Consumers first
+  * avoid losing messages
+  * avoid errors
+* Stopping Kafka Server
+  * `CTRL + C`
+  * `kafka-server-stop.sh` - graceful shutdown
+
+Running in a new terminal:
+```
+./bin/windows/kafka-server-stop.bat
+```
+You should see for all 3 servers
+```
+Instance deletion successful.
+```
+---
+## Kafka CLI: Topics
+### Introduction to Kafka Topic CLI
+Kafka CLI: `kafka-topics.sh` can be used to:
+* create a new topic
+* list
+* describe
+* delete
+* modify
+
+---
+### Creating a new Kafka topic
+Start your Kafka cluster
+```
+cd kafka_2.13-3.6.1/
+./bin/kafka-storage.sh random-uuid
+./bin/kafka-storage.sh format -t RomNcfLEQFeuXCGdC2UuGg -c config/kraft/server.properties
+./bin/kafka-server-start.sh config/kraft/server.properties
+```
+Open a separate terminal and cd into bin folder
+```
+cd kafka_2.13-3.6.1/bin
+```
+To create a kafka topic run
+```
+./kafka-topics.sh --create --topic topic1 --partitions 3 --replication-factor 1 --bootstrap-server localhost:9092
+```
+To create a new topic just change the topic name
+```
+./kafka-topics.sh --create --topic topic2 --partitions 3 --replication-factor 1 --bootstrap-server localhost:9092
+```
+---
+### List and describe Kafka topics
+To list topics
+```
+./kafka-topics.sh --list --bootstrap-server localhost:9092
+```
+You should see
+```
+topic1
+topic2
+```
+To describe topics
+```
+./kafka-topics.sh --describe --bootstrap-server localhost:9092
+```
+You should see
+```
+        Topic: topic1   Partition: 0    Leader: 1       Replicas: 1     Isr: 1
+        Topic: topic1   Partition: 1    Leader: 1       Replicas: 1     Isr: 1
+        Topic: topic1   Partition: 2    Leader: 1       Replicas: 1     Isr: 1
+Topic: topic2   TopicId: 64TEESfASQuIWdJ1EusmHQ PartitionCount: 3       ReplicationFactor: 1    Configs: segment.bytes=1073741824
+        Topic: topic2   Partition: 0    Leader: 1       Replicas: 1     Isr: 1
+        Topic: topic2   Partition: 1    Leader: 1       Replicas: 1     Isr: 1
+        Topic: topic2   Partition: 2    Leader: 1       Replicas: 1     Isr: 1
+```
+---
+### Deleting Kafka Topic
+To delete kafka topic whilst in the bin folder
+```
+./kafka-topics.sh --delete --topic topic1 --bootstrap-server localhost:9092
+```
+To confirm its gone run
+```
+./kafka-topics.sh --list --bootstrap-server localhost:9092
+```
+
+---
+## Kafka CLI: Producers
+### Introduction to Kafka Producer CLI
+The main use of `kafka-console-producer.sh` script is to send a message to a particular Kafka topic:
+* send message with a key
+* send message without a key
+* send multiple messages from a file 
+
+---
+### Producing Kafka Message without a Key
+Start your kafka cluster and in a separate folder `cd` into your bin folder
+```
+cd kafka_2.13-3.6.1/bin
+```
+Run the following script
+```
+./kafka-console-producer.sh --bootstrap-server localhost:9092 --topic my-topic
+```
+* if you send a message to a topic like `Hello world` that does not exist kafka producer will respond with error but will also automatically create it
+* best practice is to create the topic first then send the message
+
+To stop sending messages press `CTRL + C`
+
+---
+### Sending Kafka Message as a Key:Value Pair
+* messages sent with the same key are stored in the same partition so they are ordered
+
+Run
+```
+./kafka-console-producer.sh --bootstrap-server localhost:9092 --topic my-topic --property "parse.key=true" --property "key.separator=:"
+```
+Then you can start sending messages as a key value pair
+```
+>firstName:Saif
+```
+
+---
+## Kafka CLI: Consumers
+### Introduction to Kafka Consumer CLI
+
+The main use of `kafka-console-consumer.sh` is to fetch and display messages from a Kafka topic to your terminal
+* read new messages only
+* read all messages from the beginning
+
+---
+### Consuming messages from Kafka topic from the beginning
+In a separate folder `cd` into your bin folder
+```
+cd kafka_2.13-3.6.1/bin
+```
+Run
+```
+./kafka-console-consumer.sh --topic my-topic --from-beginning --bootstrap-server localhost:9092
+```
+You should see all the messages sent in order
+
+Open another window and run producer script
+```
+./kafka-console-producer.sh --bootstrap-server localhost:9092 --topic my-topic
+```
+Send a message like
+```
+>Hello world 5
+```
+You should see it show up in the other window below the list of previous messages (consumer)
+
+Open a new window and run the same consumer script
+```
+./kafka-console-consumer.sh --topic my-topic --from-beginning --bootstrap-server localhost:9092
+```
+Go back to the producer window and send another message
+```
+>Hello world 6
+```
+You should see it show up in both consumer windows
+
+---
+### Consuming new Kafka messages only
+Dont use the `--from-beginning` parameter
+```
+./kafka-console-consumer.sh --topic my-topic --bootstrap-server localhost:9092
+```
+Go back to the producer window and send another message
+```
+>Hello world 7
+```
+You should see that only `Hello world 7` is shown not any previous messages
+
+---
+### Consuming Key:Value pair messages from Kafka topic
+Use `CTRL + C` to stop the producer script and then Run
+```
+./kafka-console-producer.sh --bootstrap-server localhost:9092 --topic my-topic --property "parse.key=true" --property "key.separator=:"
+```
+Stop one of the consumers using `CTRL + C` and then run in the consumer window
+```
+./kafka-console-consumer.sh --topic my-topic --bootstrap-server localhost:9092
+```
+In the producer window run
+```
+>firstName:Saif
+```
+You will see it in both consumer windows
+
+Stop one of the consumers using `CTRL + C` and then run in the consumer window
+```
+./kafka-console-consumer.sh --topic my-topic --bootstrap-server localhost:9092 --property print.key=true
+```
+In the producer window run
+```
+>lastName:Ahmed
+```
+You should see in the consumer window the key and the value
+```
+lastName      Ahmed
+```
+To explicitly display all messages from the beginning with key and value 
+```
+./kafka-console-consumer.sh --topic my-topic --bootstrap-server localhost:9092 --property print.key=true --property print.value=true --from-beginning
+```
+You should see all the previous messages with a key and a value
+
+To hide the value run
+```
+./kafka-console-consumer.sh --topic my-topic --bootstrap-server localhost:9092 --property print.key=true --property print.value=false --from-beginning
+```
+---
+### Consuming Kafka messages in order
+Create a new topic
+```
+./kafka-topics.sh --create --topic messages-order --partitions 3 --replication-factor 3 --bootstrap-server localhost:9092
+```
+You should see
+```
+Created topic messages-order
+```
+Run to produce messages
+```
+./kafka-console-producer.sh --topic messages-order --bootstrap-server localhost:9092 --property "parse.key=true" --property "key.separator=:"
+```
+Type these messages with the same key `1`
+```
+1:First message
+1:Second message
+1:Third message
+1:Fourth message
+1:Fifth message
+1:Sixth message
+```
+Then send messages each with a different key
+```
+a:a
+b:b
+c:c
+d:d
+e:e
+f:f
+g:g
+```
+Press `CTRL + C` and Run
+```
+./kafka-console-consumer.sh --topic messages-order --bootstrap-server localhost:9092 --from-beginning --property print.key=true
+```
+You should see messages with the same key are ordered and those that have different keys are not ordered
+
+---
+## Kafka Producer - Spring Boot Microservice
+### Introduction to Kafka Producer
+* the primary role of kafka producer is to publish events or messages to one or more kafka topics
+* we use spring for apache kafka library
+* another responsibility of kafka producer is to serialize messages to binary format
+* another responsibility is to specify topic name
+* an optional responsibility is to specify topic partition
+* another responsibility is to choose which partition to write event data to 
+---
+### Kafka Producer - Introduction to synchronous communication style
+Communication Style
+* Synchronous
+* Asynchronous
+
+Sending Message Synchronously
+* sender sends a request and then waits for a response before proceeding
+* if orders microservice wants to know that the order created event was successfully stored in kafka broker it will use kafka producer to send kafka message using synchronous communication style
+* because kafka producer is waiting for a response it is blocked or put on hold until the response from kafka broker is received
+
+---
+### Kafka Producer - A use case for asynchronous communication style
+Sending Messages Asynchronously
+* kafka producer sends a message to kafka broker but it is not put on hold after and it is not blocked whilst waiting for response from kafka broker
+* it will still receive a response from broker but at a later point
+
+---
+### Quiz 4
+
+**Q1: What is the primary function of a Kafka Producer?** 
+**A: To write data to Kafka topics**  
+This answer is correct. The main role of a Kafka Producer is to write data to Kafka topics. Producers are client applications that send streams of data to topics within the Kafka cluster. The producer determines which topic the data should be sent to and can also specify a key that influences the partition within the topic to which the data is sent.  
+
+**Q2: How does a Kafka Producer determine which partition to send a message to?**   
+**A: Based on a provided message key or round-robin if no key is provided.**  
+This answer is correct. Kafka Producers use a message key to determine which partition a message should be sent to within a topic. If a key is provided, Kafka consistently assigns all messages with that key to the same partition. If no key is provided, Kafka uses a round-robin method to distribute messages evenly across the available partitions.
+
+**Q3: What library is typically used to integrate Kafka functionality into a Spring Boot application?**   
+**A: Spring for Apache Kafka**  
+This answer is correct. Spring for Apache Kafka is the library commonly used for integrating Kafka with a Spring Boot application. It simplifies the process of working with Kafka by providing a higher-level abstraction that fits well within the Spring ecosystem, making it easier to send and receive messages to and from Kafka topics.  
+
+**Q4: In a Kafka Producer, what is the responsibility related to message serialization?**   
+**A: To serialize messages into a binary format for transmission**  
+This answer is correct. One of the key responsibilities of a Kafka Producer is to serialize messages into a binary format before they are transmitted over the network to Kafka brokers. Serialization converts the message data, which might be in various formats (like strings, objects, etc.), into a standard binary format that can be efficiently transmitted and stored in Kafka.  
+
+**Q5: In the context of the Orders Microservice acting as a Kafka Producer, what characterizes the synchronous communication style with the Kafka Broker?**   
+**A: The Orders Microservice sends an Order Created Event and waits for an acknowledgment from the Kafka Broker before responding back to the Mobile Application.**    
+This answer is correct. This option accurately reflects the synchronous communication style as described. In synchronous communication, the sender (in this case, the Orders Microservice) waits for a response after sending a request (the Order Created Event) to ensure that the message was successfully stored in the Kafka Broker. This approach is used when the sender needs confirmation of successful message delivery, such as when creating an order, and it is crucial to know whether the operation was successful before proceeding.
+
+**Q6: How does the Kafka Producer behave when sending a User LoggedIn Event to the Kafka Broker asynchronously?**  
+**A: The Kafka Producer sends the User LoggedIn Event and continues its execution right away without waiting for an acknowledgment from the Kafka Broker**  
+This answer is correct. This option correctly represents asynchronous communication. In asynchronous communication, the Kafka Producer sends the User LoggedIn Event to the Kafka Broker and then immediately proceeds with its next task without waiting for a response from the Kafka Broker. This approach allows for efficient processing, especially in scenarios where immediate confirmation of message delivery is not critical.  
+
+---
+### Creating a new Spring Boot project
