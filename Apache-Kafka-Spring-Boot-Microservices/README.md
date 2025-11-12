@@ -72,6 +72,30 @@ All from the very beginning, to help you learn how to create Event-Driven Micros
     - [Kafka Producer - A use case for asynchronous communication style](#kafka-producer---a-use-case-for-asynchronous-communication-style)
     - [Quiz 4](#quiz-4)
     - [Creating a new Spring Boot project](#creating-a-new-spring-boot-project)
+    - [Kafka Producer configuration properties](#kafka-producer-configuration-properties)
+    - [Creating Kafka Topic](#creating-kafka-topic)
+    - [Run Microservice to create a new Kafka topic](#run-microservice-to-create-a-new-kafka-topic)
+    - [Creating Rest Controller](#creating-rest-controller)
+    - [Creating a Service class](#creating-a-service-class)
+    - [Creating an Event class](#creating-an-event-class)
+    - [Kafka Producer: Send Message Asynchronously](#kafka-producer-send-message-asynchronously)
+    - [Kafka Asynchronous Send. Trying how it works.](#kafka-asynchronous-send-trying-how-it-works)
+    - [Kafka Producer: Send Message Synchronously](#kafka-producer-send-message-synchronously)
+    - [Kafka Producer: Handle Exception in Rest Controller](#kafka-producer-handle-exception-in-rest-controller)
+    - [Kafka Producer: Logging Record Metadata Information](#kafka-producer-logging-record-metadata-information)
+    - [Kafka Synchronous Send. Trying how it works.](#kafka-synchronous-send-trying-how-it-works)
+  - [Kafka Producer: Acknowledgements \& Retires](#kafka-producer-acknowledgements--retires)
+    - [Kafka Producer Acknowledgement: Introduction](#kafka-producer-acknowledgement-introduction)
+    - [Kafka Producer Retries: Introduction](#kafka-producer-retries-introduction)
+    - [Configure Producer Acknowledgments in Spring Boot Microservice](#configure-producer-acknowledgments-in-spring-boot-microservice)
+    - [The min.insync.replicas configuration](#the-mininsyncreplicas-configuration)
+    - [Trying how the min.insync.replicas works](#trying-how-the-mininsyncreplicas-works)
+    - [Kafka Producer Retries](#kafka-producer-retries)
+    - [Trying how Kafka Producer Retries work](#trying-how-kafka-producer-retries-work)
+    - [Kafka Producer Delivery \& Request Timeout](#kafka-producer-delivery--request-timeout)
+    - [Trying how Kafka Producer Delivery \& Request Timeout works](#trying-how-kafka-producer-delivery--request-timeout-works)
+    - [Quiz 5: Quiz: Kafka Producer Acknowledgements and Retries](#quiz-5-quiz-kafka-producer-acknowledgements-and-retries)
+    - [Kafka Producer Spring Bean Configuration](#kafka-producer-spring-bean-configuration)
 
 ---
 ## Introduction to Apache Kafka
@@ -239,52 +263,7 @@ Format log directories using this unique ID
 ```
 ./bin/kafka-storage.sh format -t kq23bZZYRbmYy2XQ0y2m4A -c config/kraft/server.properties
 ```
-You will see this error
-```
-log4j:ERROR Could not read configuration file from URL
-```
-To fix this you must create the missing config file that the tools need
-```
-cp config/log4j.properties config/tools-log4j.properties
-```
-Fix the log.dirs path for Windows
-```
-nano config/kraft/server.properties
-```
-Right now, this line in your config uses a Linux-style temp path:
-```
-log.dirs=/tmp/kraft-combined-logs
-```
-Change it to:
-```
-log.dirs=C:\\kafka-logs
-```
-Reformat the storage directory
-```
-rm -rf /c/kafka-logs
-```
-Run
-```
-./bin/kafka-storage.sh format -t kq23bZZYRbmYy2XQ0y2m4A -c config/kraft/server.properties --ignore-formatted
-```
-You should see
-```
-Formatting C:\kafka-logs with metadata.version 3.6-IV2.
-```
-Now Patch the startup script
-```
-nano bin/kafka-server-start.sh
-```
-Change this line
-```
-EXTRA_ARGS=${EXTRA_ARGS-'-name kafkaServer -loggc'}
-```
-To this
-```
-EXTRA_ARGS=${EXTRA_ARGS-'-name kafkaServer'}
-```
-
-Save the file and re‑run:
+Run:
 ```
 ./bin/kafka-server-start.sh config/kraft/server.properties
 ```
@@ -670,3 +649,776 @@ This answer is correct. This option correctly represents asynchronous communicat
 
 ---
 ### Creating a new Spring Boot project
+Visit in broswer: https://start.spring.io/
+
+The settings you must choose:
+* Project - Maven
+* Language - Java
+* Spring Boot - Latest stable version (3.5.7)
+* Project Metadata
+  * Group - com.appsdeveloperblog.ws
+  * Artifact - ProductsMicroservice
+  * Name - ProductsMicroservice
+  * Description - Products Microservice
+  * Package name - com.appsdeveloperblog.ws.products
+  * Packaging - Jar
+  * Java - 17
+
+Add the following dependencies:
+* Spring Web
+* Spring for Apache Kafka
+
+Click on the generate button which will download it to your computer
+
+![start.spring.io.png](../images/start.spring.io.png)
+
+Unzip it to a folder called `Event-driven-microservices-with-apache-kafka`
+
+Install the Spring Boot Tools Suite
+
+Open the folder `Event-driven-microservices-with-apache-kafka`
+
+---
+### Kafka Producer configuration properties
+Navigate to `ProductsMicroservices/src/main/resources/application.properties` and paste the following code:
+```
+server.port=0
+
+spring.kafka.producer.bootstrap-servers=localhost:9092, localhost:9094
+spring.kafka.producer.key-serializer=org.apache.kafka.common.serialization.StringSerializer
+spring.kafka.producer.value-serializer=org.springframework.kafka.support.serializer.JsonSerializer
+```
+
+---
+### Creating Kafka Topic
+
+Create a new class `KafkaConfig.java` in the path: `src\main\java\com\appsdeveloperblog\KafkaConfig.java`
+
+Paste the following content:
+```
+package com.appsdeveloperblog;
+
+import java.util.Map;
+
+import org.apache.kafka.clients.admin.NewTopic;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.config.TopicBuilder;
+
+@Configuration
+public class KafkaConfig {
+
+    @Bean
+    NewTopic createTopic() {
+        return TopicBuilder.name("product-created-events-topic")
+                .partitions(3)
+                .replicas(3)
+                .configs(Map.of("min.insync.replicas", "2"))
+                .build();
+    }
+}
+```
+
+---
+### Run Microservice to create a new Kafka topic
+Make sure your kafka service is up and running
+
+Run `KafkaConfig.java` by starting the application
+
+In a GitBash terminal, change directories to the kafka folder
+
+To check if the topic exists run:
+```
+./bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic product-created-events-topic
+```
+You should see the new topic with 3 partitions 
+
+---
+### Creating Rest Controller
+Create `ProductController.java` in the main root of your folder and put it to a package called `rest`
+
+Paste this inside:
+```
+package com.appsdeveloperblog.ws.products.rest;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/products") // http://localhost:<port>/products
+public class ProductController {
+
+    @PostMapping
+    public ResponseEntity<String> createProduct(@RequestBody CreateProductRestModel product) {
+        return ResponseEntity.status(HttpStatus.CREATED).body("");
+    }
+}
+```
+Hover over `CreateProductRestModel` and click create class
+
+Paste this in:
+```
+package com.appsdeveloperblog.ws.products.rest;
+
+import java.math.BigDecimal;
+
+public class CreateProductRestModel {
+
+    private String title;
+    private BigDecimal price;
+    private Integer quantity;
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public BigDecimal getPrice() {
+        return price;
+    }
+
+    public void setPrice(BigDecimal price) {
+        this.price = price;
+    }
+
+    public Integer getQuantity() {
+        return quantity;
+    }
+
+    public void setQuantity(Integer quantity) {
+        this.quantity = quantity;
+    }
+}
+```
+
+---
+### Creating a Service class
+Select the root package and create a new interface `ProductService`. Put it into a new package called `service`
+
+Paste this in:
+```
+package com.appsdeveloperblog.ws.products.service;
+
+import org.springframework.stereotype.Service;
+import com.appsdeveloperblog.ws.products.rest.CreateProductRestModel;
+
+@Service
+public class ProductServiceImpl implements ProductService {
+
+    @Override
+    public String createProduct(CreateProductRestModel productRestModel) {
+        // TODO Auto-generated method stub
+        return null;
+    }
+}
+```
+
+In the same package create a new class `ProductServiceImpl`. Click on the add button and choose `ProductService`
+
+Change `ProductController.java`:
+```
+package com.appsdeveloperblog.ws.products.rest;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.appsdeveloperblog.ws.products.service.ProductService;
+
+@RestController
+@RequestMapping("/products") // http://localhost:<port>/products
+public class ProductController {
+
+    ProductService productService;
+
+    public ProductController(ProductService productService) {
+        this.productService = productService;
+    }
+
+    @PostMapping
+    public ResponseEntity<String> createProduct(@RequestBody CreateProductRestModel product) {
+        
+        String productId = productService.createProduct(product);
+        
+        return ResponseEntity.status(HttpStatus.CREATED).body("productId");
+    }
+}
+```
+
+---
+### Creating an Event class
+In the same service package create a class `ProductCreatedEvent` and package `service`
+
+Paste:
+```
+package com.appsdeveloperblog.ws.products.service;
+
+import java.math.BigDecimal;
+
+public class ProductCreatedEvent {
+
+    private String productId;
+    private String title;
+    private BigDecimal price;
+    private Integer quantity;
+
+    public ProductCreatedEvent() {
+    }
+
+    public ProductCreatedEvent(String productId, String title, BigDecimal price, Integer quantity) {
+        this.productId = productId;
+        this.title = title;
+        this.price = price;
+        this.quantity = quantity;
+    }
+}
+```
+
+Right click the mouse and click `Generate Getters and Setters...` and select all fields.
+
+---
+### Kafka Producer: Send Message Asynchronously
+
+Open `ProductServiceImpl.java` and paste so it looks like this:
+```
+package com.appsdeveloperblog.ws.products.service;
+
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
+import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.appsdeveloperblog.ws.products.rest.CreateProductRestModel;
+
+@Service
+public class ProductServiceImpl implements ProductService {
+
+    KafkaTemplate<String, ProductCreatedEvent> kafkaTemplate;
+    private final Logger LOGGER = LoggerFactory.getLogger(this.getClass());
+
+    public ProductServiceImpl(KafkaTemplate<String, ProductCreatedEvent> kafkaTemplate) {
+        this.kafkaTemplate = kafkaTemplate;
+    }
+
+    @Override
+    public String createProduct(CreateProductRestModel productRestModel) {
+
+        String productId = UUID.randomUUID().toString();
+
+        // TODO: Persist Product Details into database table before publishing an Event
+
+        ProductCreatedEvent productCreatedEvent = new ProductCreatedEvent(
+            productId,
+            productRestModel.getTitle(),
+            productRestModel.getPrice(),
+            productRestModel.getQuantity()
+        );
+
+        CompletableFuture<SendResult<String, ProductCreatedEvent>> future =
+            kafkaTemplate.send("product-created-events-topic", productId, productCreatedEvent);
+
+        future.whenComplete((result, exception) -> {
+
+            if (exception != null) {
+                LOGGER.error("Failed to send message: " + exception.getMessage());
+            } else {
+                LOGGER.info("Message sent successfully: " + result.getRecordMetadata());
+            }
+
+        });
+
+        return productId;
+    }
+}
+```
+
+---
+### Kafka Asynchronous Send. Trying how it works.
+
+Add before `return productId;`
+
+```
+LOGGER.info("Returning product id")
+```
+
+Go to terminal window and make sure your kafka servers are running
+
+Then run the consumer script
+```
+./bin/kafka-console-consumer.sh --topic product-created-events-topic --bootstrap-server localhost:9092 --property print.key=true
+```
+
+Go back and press the spring boot button to show the boot dashboard then start up ProductsMicroservice.
+
+Go to Postman and create a new HTTP POST Request sent to ProductsMicroservice running on local host. 
+
+Look at the logs to see that `Tomcat  started on port 58806` so that is the port we will use.
+
+The link should be
+```
+http://localhost:58806/products
+```
+Click the body tab, select raw and JSON
+
+Provide a JSON payload by typing the following code:
+```
+{
+  "title": "iPhone 11",
+  "price": 800,
+  "quantity": 19
+}
+```
+
+Click Send to send the request and you should see a successful response with the productId 
+
+---
+### Kafka Producer: Send Message Synchronously
+
+1st way:
+ Before `LOGGER.info` add 
+ ```
+future.join():
+ ```
+
+another way is:
+
+Remove this block
+```
+future.whenComplete((result, exception) -> {
+
+    if (exception != null) {
+        LOGGER.error("Failed to send message: " + exception.getMessage());
+    } else {
+        LOGGER.info("Message sent successfully: " + result.getRecordMetadata());
+    }
+
+});
+```
+Then change
+```
+CompletableFuture<SendResult<String, ProductCreatedEvent>> future = kafkaTemplate.send("product-created-events-topic", productId, productCreatedEvent);
+```
+to
+```
+SendResult<String, ProductCreatedEvent> result = kafkaTemplate.send("product-created-events-topic", productId, productCreatedEvent).get();
+```
+then change
+```
+@Override
+    public String createProduct(CreateProductRestModel productRestModel) {
+```
+to
+```
+@Override
+    public String createProduct(CreateProductRestModel productRestModel) throws Exception {
+```
+then open `ProductService.java` and change
+```
+String createProduct(CreateProductRestModel productRestModel) throws Exception ;
+```
+
+---
+### Kafka Producer: Handle Exception in Rest Controller
+
+Open `ProductController.java` and fix the compile time error
+
+Hover over the error message on `createProduct` and click `Surround with try/catch`
+
+Create a new class in the same package as the controller called `ErrorMessage`
+
+Paste so it looks like this
+```
+package com.appsdeveloperblog.ws.products.rest;
+
+import java.util.Date;
+
+public class ErrorMessage {
+    
+    private Date timestamp;
+    private String message;
+    private String details;
+    
+    public ErrorMessage() {
+    }
+    
+    public ErrorMessage(Date timestamp, String message, String details) {
+        super();
+        this.timestamp = timestamp;
+        this.message = message;
+        this.details = details;
+    }
+}
+```
+Then right click and click `Source` then `Generate Getters and Setters...`. Select all fields and click `Generate`
+
+Finally change `ProductController.java` so it looks like this
+```
+package com.appsdeveloperblog.ws.products.rest;
+
+import java.util.Date;
+
+import org.slf4j.LoggerFactory;
+
+package com.appsdeveloperblog.ws.products.rest;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.appsdeveloperblog.ws.products.service.ProductService;
+
+@RestController
+@RequestMapping("/products") //http://localhost:<port>/products
+public class ProductController {
+    
+    ProductService productService;
+    private final Logger LOGGER = LoggerFactory.getLogger(this.getClass());
+    
+    public ProductController(ProductService productService) {
+        this.productService = productService;
+    }
+    
+    @PostMapping
+    public ResponseEntity<Object> createProduct(@RequestBody CreateProductRestModel product) {
+        
+        String productId;
+        try {
+            productId = productService.createProduct(product);
+        } catch (Exception e) {
+            //e.printStackTrace();
+            LOGGER.error(e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorMessage(new Date(), e.getMessage(), "/products"));
+        }
+        
+        return ResponseEntity.status(HttpStatus.CREATED).body(productId);
+    }
+}
+```
+
+---
+### Kafka Producer: Logging Record Metadata Information
+
+Open `ProductServiceImpl.java` and add this line before `SendResult<String, ProductCreatedEvent> result = kafkaTemplate.send("product-created-events-topic", productId, productCreatedEvent).get();`
+
+```
+LOGGER.info("Before publishing a ProductCreatedEvent");
+```
+
+Then after `SendResult<String, ProductCreatedEvent> result = kafkaTemplate.send("product-created-events-topic", productId, productCreatedEvent).get();` write
+
+```
+LOGGER.info("Partition: " + result.getRecordMetadata().partition());
+LOGGER.info("Topic: " + result.getRecordMetadata().topic());
+LOGGER.info("Offset: " + result.getRecordMetadata().offset());
+```
+
+---
+### Kafka Synchronous Send. Trying how it works.
+
+Ensure you have kafka servers running
+
+Expand the spring boot dashboard and start up ProductMicroservice
+
+Find the port number that it is running in the console and now go to terminal and start up kafka consumer script
+
+```
+./bin/kafka-console-consumer.sh --topic product-created-events-topic --bootstrap-server localhost:9092 --property print.key=true
+```
+
+Go to Postman and create a new HTTP POST Request sent to ProductsMicroservice running on local host. 
+
+The link should be
+```
+http://localhost:<PORT-NUMBER>/products
+```
+Click the body tab, select raw and JSON
+
+Provide a JSON payload by typing the following code:
+```
+{
+  "title": "iPhone 11",
+  "price": 800,
+  "quantity": 19
+}
+```
+
+Click Send to send the request and you should see a successful response
+
+---
+## Kafka Producer: Acknowledgements & Retires
+### Kafka Producer Acknowledgement: Introduction
+
+* **spring.kafka.producer.acks=all** Waits for an acknowledgement from all brokers.
+
+* **spring.kafka.producer.acks=1** Waits for an acknowledgement from a leader broker only.
+
+* **spring.kafka.producer.acks=0** Does not wait for an acknowledgement.
+
+* Kafka producer will wait for acknowledgement not just from any broker but only from in-sync replicas
+* you can configure the minimum number of replicas that you want to receive an acknowledgment from with `--config min.insync.replicas=`
+---
+### Kafka Producer Retries: Introduction
+
+When kafka producer sends a message to a broker there can be:
+
+* **No response** – if the producer is configured with `acks=0`  
+* **Acknowledgement (ACK)** of Successful Storage  
+* **Non-Retryable Error** – A permanent problem that is unlikely to be resolved by retries.  
+* **Retryable Error** – A temporary problem that can be resolved by retrying the send operation.  
+
+* `spring.kafka.producer.retries=10` How many times Kafka Producer will try to send a message before marking it as failed. Default value is `2147483647`.
+
+`spring.kafka.producer.properties.retry.backoff.ms=1000` How long the producer will wait before attempting to retry a failed request. Default value is `100 ms`.
+
+* `spring.kafka.producer.properties.delivery.timeout.ms=120000` The maximum time the Producer can spend trying to deliver the message. Default value is `120000 ms` (2 minutes).
+
+```
+delivery.timeout.ms >= linger.ms + request.timeout.ms
+```
+
+* `spring.kafka.producer.properties.linger.ms=0` The maximum time in milliseconds that the producer will wait and buffer data before sending a batch of messages.  
+The default value is `0`.
+
+* `spring.kafka.producer.properties.request.timeout.ms=30000` The maximum time to wait for a response from the broker after sending a request. The default value is `30000 ms`.
+---
+### Configure Producer Acknowledgments in Spring Boot Microservice
+
+Open `application.properties` in `src/main/resources` and add one additional configuration used to configure acknowledgments mode for kafka producer
+
+```
+spring.kafka.producer.acks=1
+```
+
+* if we change `1` to `all` this will mean that producer will now wait for acknowledgment from all in-sync replicas
+* this provides the strongest durability gurantee because it ensures that all replicas have received and persisted our message
+---
+### The min.insync.replicas configuration
+
+Open a terminal window and `cd` into the kafka folder
+
+to configure the minimum amount of in-sync replicas property at the time of creating a new topic:
+```
+/bin/kafka-topics.sh --create --topic insync-topic --partitions 3 --replication-factor 3 --bootstrap-server localhost:9092 --config min.insync.replicas=2
+```
+
+to configure minimum in-sync replicas for already existing topic which was `topic2`
+```
+./bin/kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type topics --entity-name topic2 --add-config min.insync.replicas=2
+```
+---
+### Trying how the min.insync.replicas works
+
+run server 1,2 and 3 in separate windows
+
+run the kafka consumer script
+```
+./bin/kafka-console-consumer.sh --topic topic2 --bootstrap-server localhost:9092
+```
+
+update `ProductServiceImpl.java` to send messages to topic 2:
+
+from
+```
+SendResult<String, ProductCreatedEvent> result = kafkaTemplate.send("product-created-events-topic", productId, productCreatedEvent).get();
+```
+to:
+```
+SendResult<String, ProductCreatedEvent> result = kafkaTemplate.send("topic2", productId, productCreatedEvent).get();
+```
+Start up the microservice and copy the port number on which it is running on.
+
+Open Postman and send the request and check it is successful in the terminal
+
+Stop one server, send the request again and see that it is still successful.
+
+Stop one more server, send the request again and see that you receive an error because the producer is expecting acknowlegment from 2 servers and only 1 is running
+
+---
+### Kafka Producer Retries
+
+Add to `application.properties`
+```
+spring.kafka.producer.retries=10
+spring.kafka.producer.properties.retry.backoff.ms=1000
+```
+This will send 10 retries, 1 every 1000ms.
+
+---
+### Trying how Kafka Producer Retries work
+
+Make sure you have all kafka brokers running
+
+Start up `ProductsMicroservice` and copy the port number it started on
+
+Update the port number on Postman and send the HTTP request. You will see a successful response.
+
+Stop one server, send the request again and see that it is still successful.
+
+Stop one more server, send the request again and see that you receive an error because the producer is expecting acknowlegment from 2 servers and only 1 is running
+
+Go to the logs and you will see that it tries to send 10 retries, 1 every 1000ms and an error message in Postman
+
+---
+### Kafka Producer Delivery & Request Timeout
+
+Comment out in `application.properties`
+```
+#spring.kafka.producer.retries=10
+#spring.kafka.producer.properties.retry.backoff.ms=1000
+```
+and add
+```
+spring.kafka.producer.properties.delivery.timeout.ms=120000
+
+spring.kafka.producer.properties.linger.ms=0
+spring.kafka.producer.properties.request.timeout.ms=30000
+```
+---
+### Trying how Kafka Producer Delivery & Request Timeout works
+
+Make sure you have all kafka brokers running
+
+Start up `ProductsMicroservice` and copy the port number it started on
+
+Update the port number on Postman and send the HTTP request. You will see a successful response.
+
+Stop 2 kafka brokers to activate retry behaviour 
+
+Go to Postman and send the request. Go to yout console logs and you will see it retries for the allotted 2 minutes until it timeouts
+
+---
+### Quiz 5: Quiz: Kafka Producer Acknowledgements and Retries
+
+**Q1: What does the 'acks' configuration in a Kafka Producer specify?**
+**A: The acknowledgment level required from the Kafka cluster for successful message delivery.** 
+The 'acks' configuration in a Kafka Producer determines the level of acknowledgment required from the Kafka cluster for a message to be considered successfully delivered. For example, 'acks=0' means the producer will not wait for any acknowledgment, 'acks=1' means waiting for an acknowledgment from the leader broker only, and 'acks=all' means waiting for acknowledgments from all in-sync replicas.
+
+**Q2: What is the impact of setting 'acks=all' in a Kafka Producer configuration?**  
+**A: It ensures higher data durability by requiring acknowledgment from all in-sync replicas.**  
+The 'acks=all' setting in a Kafka Producer configuration ensures higher data durability. This is because it requires acknowledgments from all in-sync replicas before considering the message successfully sent, reducing the likelihood of data loss in case of broker failure.
+
+**Q3: What is a possible drawback of setting 'acks=0' in a Kafka Producer?**  
+**A: It may lead to data loss as the producer does not wait for any acknowledgment from brokers.**  
+This answer is correct. One of the main drawbacks of setting 'acks=0' in a Kafka Producer is the increased risk of data loss. In this configuration, the producer sends messages without waiting for any acknowledgment from the brokers, which means it won't know if the message was not received or stored by the Kafka cluster.
+
+**Q4: What does the 'retries' configuration in a Kafka Producer control?**  
+**A: The number of times the producer will attempt to resend a message after a send failure.**  
+This answer is correct. The 'retries' configuration in a Kafka Producer specifies the number of retry attempts the producer will make if a message send fails. This is crucial for ensuring message delivery in the event of transient issues, such as temporary network problems or brief broker unavailability.
+
+**Q5: How does the 'retry.backoff.ms' setting affect Kafka Producer retries?**  
+**A: It specifies the time to wait before attempting a message retry after a failure.**  
+This answer is correct. The 'retry.backoff.ms' setting in a Kafka Producer specifies the amount of time to wait before attempting another retry after a send failure. This backoff time is crucial to prevent overloading the network or broker with rapid successive retries.
+
+---
+### Kafka Producer Spring Bean Configuration
+
+Open `KafkaConfig.java`
+
+Add a new method
+```
+Map<String, Object> producerConfigs() {
+    Map<String, Object> config = new HashMap<>();
+    
+    return config;
+}
+
+```
+Hover over `HashMap` with your mouse and click `Import HashMap`
+
+Now paste so your file looks like this
+```
+package com.appsdeveloperblog.ws.products;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.config.TopicBuilder;
+import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.ProducerFactory;
+import com.appsdeveloperblog.ws.core.ProductCreatedEvent;
+
+@Configuration
+public class KafkaConfig {
+	
+	@Value("${spring.kafka.producer.bootstrap-servers}")
+	private String bootstrapServers;
+	
+    @Value("${spring.kafka.producer.key-serializer}")
+    private String keySerializer;
+
+    @Value("${spring.kafka.producer.value-serializer}")
+    private String valueSerializer;
+
+    @Value("${spring.kafka.producer.acks}")
+    private String acks;
+
+    @Value("${spring.kafka.producer.properties.delivery.timeout.ms}")
+    private String deliveryTimeout;
+
+    @Value("${spring.kafka.producer.properties.linger.ms}")
+    private String linger;
+
+    @Value("${spring.kafka.producer.properties.request.timeout.ms}")
+    private String requestTimeout;
+	
+	Map<String, Object> producerConfigs() {
+		Map<String, Object> config = new HashMap<>();
+		
+		config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+		config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, keySerializer);
+		config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, valueSerializer);
+		config.put(ProducerConfig.ACKS_CONFIG, acks);
+		config.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, deliveryTimeout);
+		config.put(ProducerConfig.LINGER_MS_CONFIG, linger);
+		config.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, requestTimeout);
+		
+		return config;
+	}
+	
+	@Bean
+	ProducerFactory<String, ProductCreatedEvent> producerFactory() {
+		return new DefaultKafkaProducerFactory<>(producerConfigs());
+	}
+	
+	@Bean
+	KafkaTemplate<String, ProductCreatedEvent> kafkaTemplate() {
+		return new KafkaTemplate<String, ProductCreatedEvent>(producerFactory());
+	}
+	
+	@Bean
+	NewTopic createTopic() {
+		return TopicBuilder.name("product-created-events-topic")
+				.partitions(3)
+				.replicas(3)
+				.configs(Map.of("min.insync.replicas","2"))
+				.build();
+	}
+
+}
+```
+---
+
