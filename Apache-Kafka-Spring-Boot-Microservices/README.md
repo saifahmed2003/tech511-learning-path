@@ -96,6 +96,44 @@ All from the very beginning, to help you learn how to create Event-Driven Micros
     - [Trying how Kafka Producer Delivery \& Request Timeout works](#trying-how-kafka-producer-delivery--request-timeout-works)
     - [Quiz 5: Quiz: Kafka Producer Acknowledgements and Retries](#quiz-5-quiz-kafka-producer-acknowledgements-and-retries)
     - [Kafka Producer Spring Bean Configuration](#kafka-producer-spring-bean-configuration)
+  - [Idempotent Producer in Kafka](#idempotent-producer-in-kafka)
+    - [Introduction to Idempotent Kafka Producer](#introduction-to-idempotent-kafka-producer)
+    - [Enable Kafka Producer Idempotence in application.properties](#enable-kafka-producer-idempotence-in-applicationproperties)
+    - [Enable Kafka Producer Idempotence in Spring Bean](#enable-kafka-producer-idempotence-in-spring-bean)
+  - [Kafka Consumer - Spring Boot Microservice](#kafka-consumer---spring-boot-microservice)
+    - [Introduction to Kafka Consumer](#introduction-to-kafka-consumer)
+    - [Creating a new Spring Boot project](#creating-a-new-spring-boot-project-1)
+    - [Kafka Consumer Configuration Properties](#kafka-consumer-configuration-properties)
+    - [Kafka Consumer with @KafkaEventListener and @KafkaHandler annotations](#kafka-consumer-with-kafkaeventlistener-and-kafkahandler-annotations)
+    - [Creating the "core" module](#creating-the-core-module)
+    - [Adding "core" project as a dependency](#adding-core-project-as-a-dependency)
+    - [@KafkaHandler: Trying how it works](#kafkahandler-trying-how-it-works)
+    - [Kafka Consumer Spring Bean Configuration](#kafka-consumer-spring-bean-configuration)
+    - [Kafka Listener Container Factory](#kafka-listener-container-factory)
+    - [Quiz 6: Quiz: Apache Kafka Consumer.](#quiz-6-quiz-apache-kafka-consumer)
+  - [Kafka Consumer - Handle Deserializer Errors](#kafka-consumer---handle-deserializer-errors)
+    - [Introduction to Error Handling in Kafka Consumer](#introduction-to-error-handling-in-kafka-consumer)
+    - [Causing the deserialization problem](#causing-the-deserialization-problem)
+    - [Kafka Consumer - ErrorHandlingDeserializer](#kafka-consumer---errorhandlingdeserializer)
+    - [Trying how ErrorHandlingDeserializer works](#trying-how-errorhandlingdeserializer-works)
+  - [Kafka Consumer - Dead Letter Topic(DLT)](#kafka-consumer---dead-letter-topicdlt)
+    - [Introduction to Dead Letter Topic(DLT) in Kafka](#introduction-to-dead-letter-topicdlt-in-kafka)
+    - [Handle errors: The DefaultErrorHandler and DeadLetterPublishingRecoverer classes](#handle-errors-the-defaulterrorhandler-and-deadletterpublishingrecoverer-classes)
+    - [Create and Configure KafkaTemplate object](#create-and-configure-kafkatemplate-object)
+    - [Dead Letter Topic in Kafka: Trying how it works](#dead-letter-topic-in-kafka-trying-how-it-works)
+    - [Quiz 7: Dead Letter Topic in Kafka](#quiz-7-dead-letter-topic-in-kafka)
+  - [Kafka Consumer - Exceptions and Retries](#kafka-consumer---exceptions-and-retries)
+    - [Introduction to Exception handling in Kafka consumer and retries](#introduction-to-exception-handling-in-kafka-consumer-and-retries)
+    - [Creating retryable and not retryable exceptions in Kafka](#creating-retryable-and-not-retryable-exceptions-in-kafka)
+    - [Configure DefaultErrorHandler with a list of not retryable exceptions](#configure-defaulterrorhandler-with-a-list-of-not-retryable-exceptions)
+    - [Trying how not retryable exception works](#trying-how-not-retryable-exception-works)
+    - [Register RetryableException and define wait time interval](#register-retryableexception-and-define-wait-time-interval)
+    - [Throwing a RetryableException](#throwing-a-retryableexception)
+    - [Overview of a destination Microservice](#overview-of-a-destination-microservice)
+    - [Trying how retry works](#trying-how-retry-works)
+  - [Kafka Consumer - Multiple Consumers in a Consumer Group](#kafka-consumer---multiple-consumers-in-a-consumer-group)
+    - [Introduction to Kafka Consumer Groups](#introduction-to-kafka-consumer-groups)
+    - [Rebalancing and Partition Assignment in Apache Kafka](#rebalancing-and-partition-assignment-in-apache-kafka)
 
 ---
 ## Introduction to Apache Kafka
@@ -1421,4 +1459,782 @@ public class KafkaConfig {
 }
 ```
 ---
+## Idempotent Producer in Kafka
+### Introduction to Idempotent Kafka Producer
 
+* an idempotent producer avoids duplicate messages in the log in the presence of failures and retries
+* enable.idempotence = true
+* by default this configuration property is enabled but we should still explictly enable it
+
+---
+### Enable Kafka Producer Idempotence in application.properties
+
+Go to `application.properties`
+
+Add 
+```
+spring.kafka.producer.properties.enable.idempotence=true
+```
+and make sure this is less or equal to 5
+```
+spring.kafka.producer.properties.max.in.flight.requests.per.connection=5
+```
+and make sure acknowledgment is set to `all`
+```
+spring.kafka.producer.acks=all
+```
+and make sure retries is commented out
+```
+#spring.kafka.producer.retries=10
+```
+---
+### Enable Kafka Producer Idempotence in Spring Bean
+Open `KafkaConfig.java`
+Add
+```
+config.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
+```
+Add
+```
+@Value("${spring.kafka.producer.properties.enable.idempotence}")
+private boolean idempotence;
+```
+change 
+```
+config.put(ProducerConfig.ACKS_CONFIG, acks);
+```
+to 
+```
+config.put(ProducerConfig.ACKS_CONFIG, "all");
+```
+add
+```
+@Value($"{spring.kafka.producer.properties.max.in.flight.requests.per.connection}")
+private Integer inflightRequests;
+```
+add 
+```
+config.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, inflightRequests);
+```
+add 
+```
+config.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
+```
+Start up `ProductsMicroservice` and copy the port number it started on
+
+Update the port number on Postman and send the HTTP request. `http://localhost:50251/products` You will see a successful response.
+
+Try to set max in flight requests to 6 and Start up `ProductsMicroservice` and copy the port number it started on
+
+Update the port number on Postman and send the HTTP request. You should see an error messsage.
+
+---
+## Kafka Consumer - Spring Boot Microservice
+### Introduction to Kafka Consumer
+
+* we will create a new spring boot microservice that will act as kafka consumer
+* it will consume new messages from kafka topic
+
+![kafka-topic.png](../images/kafka-topic.png)
+
+---
+### Creating a new Spring Boot project
+
+Using Spring Tool  Suite for eclipse
+
+click on `file`, `new`, `spring starter project`
+
+* name - `EmailNotificationMicroservice`
+* type - `Maven`
+* packaging - `Jar`
+* Java Version - 17
+* Language - `Java`
+* Group - `com.appsdeveloperblog.ws`
+* Artifact - `EmailNotificationMicroservice`
+* Version - leave it as is
+* Description - Email Notification Microservice 
+* Package - `com.appsdeveloperblog.ws.emailnotification`
+
+Click Next and pick the latest stable spring boot version. Also select `Spring Web` and `Spring for Apache Kafka`
+
+---
+### Kafka Consumer Configuration Properties
+Open `application.properties` and paste
+```
+server.port=0
+spring.kafka.consumer.bootstrap-servers=localhost:9092,localhost:9094
+spring.kafka.consumer.key-deserializer=org.apache.kafka.common.serialization.StringDeserializer
+spring.kafka.consumer.value-deserializer=org.springframework.kafka.support.serializer.JsonDeserializer
+spring.kafka.consumer.group-id=product-created-events
+spring.kafka.consumer.properties.spring.json.trusted.packages=*
+```
+
+---
+### Kafka Consumer with @KafkaEventListener and @KafkaHandler annotations
+
+Create a new class by opening `src/main/java` and in the root package `com.appsdeveloperblog.ws.emailnotification`
+right click and create a `class`
+
+Name it `ProductCreatedEventHandler` and package `com.appsdeveloperblog.ws.emailnotification.handler`
+
+Write so it looks like this
+```
+package com.appsdeveloperblog.ws.emailnotification.handler;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.kafka.annotation.KafkaHandler;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.stereotype.Component;
+
+@Component
+@KafkaListener(topics="product-created-events-topic")
+public class ProductCreatedEventHandler {
+
+    private final Logger LOGGER = LoggerFactory.getLogger(this.getClass());
+    
+    @KafkaHandler
+    public void handle(ProductCreatedEvent productCreatedEvent) {
+        LOGGER.info("Received a new event: " + productCreatedEvent.getTitle());
+    }
+}
+``` 
+---
+### Creating the "core" module
+Go to `file`, `new` and then `spring starter project`
+* name -`core`
+* type - `Maven`
+* packaging - `Jar`
+* Java Version - 17
+* Language - `Java`
+* Group - `com.appsdeveloperblog.ws`
+* Artifact - `core`
+* Version - leave it as is
+* Description - a shared CORE library 
+* Package - `com.appsdeveloperblog.ws.core`
+
+Click Next and pick the latest stable spring boot version. You dont need to add any dependencies.
+
+Go to this projects `pom.xml` and remove 
+```
+<build>
+    <plugins>
+        <plugin>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-maven-plugin</artifactId>
+        </plugin>
+    </plugins>
+</build>
+```
+and remove
+```
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter</artifactId>
+    </dependency>
+    
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-test</artifactId>
+        <scope>test</scope>
+    </dependency>
+```
+Then delete `CoreApplication.java` and `CoreApplicationTests.java`
+
+Now copy `ProductCreatedEvent.java` and paste it in the root package `com.appsdeveloperblog.ws.core`
+
+---
+### Adding "core" project as a dependency
+Copy these lines from `pom.xml`
+```
+<groupId>com.appsdeveloperblog.ws</groupId>
+<artifactId>core</artifactId>
+<version>0.0.1-SNAPSHOT</version>
+```
+Now go to `pom.xml` file in `ProductsMicroservice` and create a new dependency at the top of `<dependencies>`
+
+```
+<dependency>
+    <groupId>com.appsdeveloperblog.ws</groupId>
+    <artifactId>core</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+<dependency>
+```
+Now delete `ProductCreatedEvent.java` from inside `ProductsMicroservice`
+
+Right click `core` then click `Run As` then `Maven Install`
+
+Right click `ProductsMicroservice` then click `Maven` then `Update Project`
+
+Open `ProductServiceImpl.java` and hover your mouse over `ProductCreatedEvent` and press `Import...`
+
+Now go to `pom.xml` file in `EmailNotificationMicroservice` and add a new dependency at the top of `<dependencies>`
+```
+<dependency>
+    <groupId>com.appsdeveloperblog.ws</groupId>
+    <artifactId>core</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+<dependency>
+```
+
+Right click `ProductsMicroservice` then click `Maven` then `Update Project`
+
+Open `ProductCreatedEventHandler.java` and hover your mouse over `ProductCreatedEvent` and press `Import...`
+
+---
+### @KafkaHandler: Trying how it works
+Make sure your kafka servers are running
+
+Right click `ProductsMicroservice` then click `Run As` then `Spring Boot App`
+
+Right click `EmailNotificationMicroservice` then click `Run As` then `Spring Boot App`
+
+Both microservices are up and running
+
+Open a console of `ProductsMicroservice` and copy its port number
+
+Update the port number on Postman and send the HTTP request. `http://localhost:<PORTNUMBER>/products` You will see a successful response (product Id)
+
+switch to a console of `EmailNotificationMicroservice` and you will see a log saying it received a new event
+
+---
+### Kafka Consumer Spring Bean Configuration
+
+In the root package `com.appsdeveloperblog.ws.emailnotification` create a new class called `KafkaConsumerConfiguration`
+
+Write so it looks like this
+```
+package com.appsdeveloperblog.ws.emailnotification;
+
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.kafka.core.ConsumerFactory;
+import java.util.Map;
+import java.util.HashMap;
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.springframework.kafka.support.serializer.JsonDeserializer;
+
+@Configuration
+public class KafkaConsumerConfiguration {
+
+    @Autowired
+    Environment environment;
+    
+    @Bean
+    public ConsumerFactory<String, Object> consumerFactory() {
+        Map<String, Object> config = new HashMap<>();
+        config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, environment.getProperty("spring.kafka.consumer.bootstrap-servers"));
+        config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
+        config.put(JsonDeserializer.TRUSTED_PACKAGES, environment.getProperty("spring.kafka.consumer.properties.spring.json.trusted"));
+        config.put(ConsumerConfig.GROUP_ID_CONFIG, environment.getProperty("spring.kafka.consumer.group-id"));
+        
+        return new DefaultKafkaConsumerFactory<>(config);
+    }
+}
+```
+Then change `application.properties` so it looks like this
+```
+server.port=0
+spring.kafka.consumer.bootstrap-servers=localhost:9092,localhost:9094
+#spring.kafka.consumer.key-deserializer=org.apache.kafka.common.serialization.StringDeserializer
+#spring.kafka.consumer.value-deserializer=org.springframework.kafka.support.serializer.JsonDeserializer
+spring.kafka.consumer.group-id=product-created-events
+spring.kafka.consumer.properties.spring.json.trusted.packages=com.appsdeveloperblog.ws.core
+```
+---
+### Kafka Listener Container Factory
+Add a new method to `KafkaConsumerConfiguration.java`
+```
+@Bean
+    ConcurrentKafkaListenerContainerFactory<String, Object> kafkaListenerContainerFactory(
+            ConsumerFactory<String, Object> consumerFactory) {
+        
+        ConcurrentKafkaListenerContainerFactory<String, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(consumerFactory);
+        
+        return factory;
+    }
+```
+
+---
+### Quiz 6: Quiz: Apache Kafka Consumer.
+**Q1: What is the primary function of a Kafka Consumer?**  
+**A: To read and process messages from Kafka topics.**  
+The primary function of a Kafka Consumer is to read and process messages from Kafka topics. Consumers subscribe to one or more Kafka topics and then process the stream of messages that are published to these topics.
+
+**Q2: What is the purpose of the @KafkaHandler annotation in a Kafka Consumer application?**  
+**A: To define multiple methods in a listener class for different types of Kafka messages.**  
+The @KafkaHandler annotation is used within a Kafka listener class to define multiple methods for handling different types of messages. Each method annotated with @KafkaHandler can be tailored to process a specific type of message. This allows for more organized and type-specific handling of messages within a single listener class, improving the clarity and maintainability of the code.
+
+**Q3: What distinguishes the @KafkaHandler annotation from the @KafkaListener annotation in a Kafka Consumer application?**  
+**A: @KafkaHandler is used to handle specific message types within a class, whereas @KafkaListener is used to define the method that listens to messages from Kafka topics.**  
+@KafkaHandler is used within a class that has @KafkaListener to handle specific message types, allowing differentiated processing based on message content. This annotation cannot specify the Kafka topic nor be placed above the class name. In contrast, @KafkaListener is used to define methods (or classes) that listen to messages from Kafka topics and can specify the topic to listen to.
+
+**Q4: What is the difference between the spring.kafka.consumer.keyDeserializer and spring.kafka.consumer.value-deserializer configuration properties in a Kafka Consumer application?**  
+**A: keyDeserializer specifies the deserializer class for message keys, while value-deserializer specifies the deserializer class for message values.**  
+The `spring.kafka.consumer.keyDeserializer` property is used to specify the deserializer class for the keys of Kafka messages, and `spring.kafka.consumer.value-deserializer` is used for specifying the deserializer class for the values of the messages. Deserializers are essential because they convert the byte stream received from Kafka into a format that can be understood and processed by the consumer application.
+
+**Q5: In a Kafka Consumer application, what role does the spring.kafka.consumer.properties.spring.json.trusted.packages configuration play?**  
+**A: It determines the packages allowed for deserializing JSON messages, ensuring only objects from known sources are processed.**  
+This property specifies the packages that are considered safe for JSON message deserialization. It acts as a security measure to prevent the application from deserializing objects from unknown or untrusted sources, thereby reducing potential security risks.
+
+**Q6: Can a single Kafka consumer consume messages from more than one topic?**  
+**A: Yes, a consumer can be configured to consume messages from multiple topics simultaneously.**  
+A Kafka consumer can indeed be configured to consume messages from multiple topics. This provides greater flexibility and efficient utilization of consumers, especially when working with various topics that require similar processing logic.
+
+---
+## Kafka Consumer - Handle Deserializer Errors
+### Introduction to Error Handling in Kafka Consumer
+
+![handle-deserializer-errors.png](../images/handle-deserializer-errors.png)
+
+* json serializer will not be able to convert this new message into a product created event java object because it has a different message format
+* because error took place the message is not considered successfully consumed so the next time the microservice consumes a message it will again get this faulty message in an error loop and keep throwing exception
+
+---
+### Causing the deserialization problem
+Make sure your kafka servers are running
+
+Run `EmailNotificationMicroservice` as Spring Boot application
+
+Go to a terminal window and send a message
+```
+./bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic product-created-events-topic --property "parse.key=true" --property "key.separator=:"
+```
+Then send a message with invalid format
+```
+>1:{safadsfadag}
+```
+Go to your console and you will see it is in an endless loop of throwing exception
+
+---
+### Kafka Consumer - ErrorHandlingDeserializer
+Open `KafkaConsumerConfiguration.java`
+
+Add
+```
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
+```
+change 
+```
+@Bean
+    public ConsumerFactory<String, Object> consumerFactory() {
+        Map<String, Object> config = new HashMap<>();
+        config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, environment.getProperty("spring.kafka.consumer.bootstrap-servers"));
+        config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
+        config.put(JsonDeserializer.TRUSTED_PACKAGES, environment.getProperty("spring.kafka.consumer.properties.spring.json.trusted"));
+        config.put(ConsumerConfig.GROUP_ID_CONFIG, environment.getProperty("spring.kafka.consumer.group-id"));
+    
+        return new DefaultKafkaConsumerFactory<>(config);
+}
+```
+to 
+```
+@Bean
+ConsumerFactory<String, Object> consumerFactory() {
+    Map<String, Object> config = new HashMap<>();
+    config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,
+               environment.getProperty("spring.kafka.consumer.bootstrap-servers"));
+    config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+    config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+    config.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
+    config.put(JsonDeserializer.TRUSTED_PACKAGES,
+               environment.getProperty("spring.kafka.consumer.properties.spring.json.trusted.packages"));
+    config.put(ConsumerConfig.GROUP_ID_CONFIG, environment.getProperty("spring.kafka.consumer.group-id"));
+    
+    return new DefaultKafkaConsumerFactory<>(config);
+}
+```
+---
+### Trying how ErrorHandlingDeserializer works
+
+Start up `EmailNotificationMicroservice`
+
+You will see an error message in the console but it is not repeated again
+
+Starting `ProductsMicroservice` and send a good message again with Postman by copying the port number
+
+You will see a successful response
+
+Open a terminal and run again
+```
+./bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic product-created-events-topic --property "parse.key=true" --property "key.separator=:"
+```
+Then send a message with invalid format
+```
+>2:{safadsfadag}
+```
+You will see that you received an error one time and is able to recover
+
+Go to Postman change `iPhone 12` to `iPhone13` and send a new message
+
+You should see the new message confirming that it recovers from deserialization errors
+
+---
+## Kafka Consumer - Dead Letter Topic(DLT)
+### Introduction to Dead Letter Topic(DLT) in Kafka
+* a message that fails to be deserialized is sent to a dead letter topic
+* so that we can look at these messages later and decide what to do with them
+* you can 
+  * identify the root cause of their problem
+  * take corrective action
+  * or even create a separate consumer microservice that will consume messages from DLT and process them differently
+* example: `product-created-event-topic.DLT`
+
+---
+### Handle errors: The DefaultErrorHandler and DeadLetterPublishingRecoverer classes
+
+Open `KafkaConsumerConfiguration.java`
+
+Add
+```
+import org.springframework.kafka.listener.DefaultErrorHandler
+```
+Change this
+```
+@Bean
+    ConcurrentKafkaListenerContainerFactory<String, Object> kafkaListenerContainerFactory(
+            ConsumerFactory<String, Object> consumerFactory) {
+        
+        ConcurrentKafkaListenerContainerFactory<String, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(consumerFactory);
+        
+        return factory;
+    }
+```
+to 
+```
+@Bean
+    ConcurrentKafkaListenerContainerFactory<String, Object> kafkaListenerContainerFactory(
+            ConsumerFactory<String, Object> consumerFactory, KafkaTemplate<String Object> kafkaTemplate) {
+        
+        DefaultErrorHandler errorHandler = new DefaultErrorHandler(new DeadLetterPublishingRecoverer(kafkaTemplate));
+
+        ConcurrentKafkaListenerContainerFactory<String, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(consumerFactory);
+        factory.setCommonErrorHandler(errorHandler);
+
+        return factory;
+    }
+```
+---
+### Create and Configure KafkaTemplate object
+
+Open `KafkaConsumerConfiguration.java`
+
+Add new methods
+```
+@Bean
+KafkaTemplate<String, Object> kafkaTemplate(ProducerFactory<String, Object> producerFactory) {
+    return new KafkaTemplate<>(producerFactory);
+}
+
+@Bean
+ProducerFactory<String, Object> producerFactory() {
+    Map<String, Object> config = new HashMap<>();
+    config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, environment.getProperty("spring.kafka.consumer.bootstrap-servers"));
+    config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+    config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+    
+    return new DefaultKafkaProducerFactory<>(config);
+}RetryClaude can make mistakes. Please double-check responses.
+```
+and add
+```
+import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.support.serializer.JsonSerializer;
+```
+---
+### Dead Letter Topic in Kafka: Trying how it works
+Start up `EmailNotificationMicroservice` and `ProductsMicroservice`
+
+Go to a terminal window and run
+```
+./bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic product-created-events-topic --property parse.key=true --property key.separator=:
+```
+Copy the port nummber on which `ProductsMicroservice` is running
+
+Go to Postman, update port number and create a new product - you will see a successful response
+
+Open `EmailNotificationMicroservice` console and check that it has been consumed properly
+
+Then send a message with invalid format
+```
+>1:{safadsfadag}
+```
+Open `EmailNotificationMicroservice` console and check that the error was handled.
+
+Go to a terminal window and run
+```
+./bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic product-created-events-topic.DLT --from-beginning --property print.key=true --property print.value=true
+```
+You will see a message like
+```
+e3NmYXNkc2RmfQ==
+```
+Paste it and visit browser `base64decode.org`
+
+Decode it and you will see the orginal value `safadsfadag`
+
+---
+### Quiz 7: Dead Letter Topic in Kafka
+
+**Q1: What is the primary purpose of a Dead Letter Topic in Apache Kafka?**  
+**A: To handle messages that could not be processed successfully.**  
+The primary purpose of a Dead Letter Topic in Kafka is to handle messages that cannot be processed successfully by a consumer. This can include messages that cause exceptions during processing. The Dead Letter Topic provides a way to separate these problematic messages for further analysis or reprocessing without interrupting the normal message flow.
+
+**Q2: When would a message be sent to a Dead Letter Topic in Kafka?**  
+**A: If a consumer encounters an error while processing the message and cannot proceed.**  
+A message is typically sent to a Dead Letter Topic when a consumer encounters an error during processing and cannot successfully process the message. This allows the problematic message to be isolated and handled separately, ensuring that processing errors do not disrupt the normal flow of messages.
+
+**Q3: What is a common practice after a message is sent to a Dead Letter Topic in Kafka?**  
+**A: The message is usually analyzed and potentially reprocessed or corrected.**  
+A common practice after a message ends up in a Dead Letter Topic is to analyze the message to understand why it failed and then decide on a course of action, which might include reprocessing or correcting the message.
+
+---
+## Kafka Consumer - Exceptions and Retries
+### Introduction to Exception handling in Kafka consumer and retries
+If Exception is Retryable, then:
+* Configure wait time
+* Number of times to retry
+* will be sent to DLT
+
+---
+### Creating retryable and not retryable exceptions in Kafka 
+In the root package `com.appsdeveloperblog.ws.emailnotification` and create a new class
+
+* Name - RetryableException
+* Package - `com.appsdeveloperblog.ws.emailnotification.error`
+
+Write
+```
+public class RetryableException extends RuntimeException {
+```
+
+Then right click, click `Source` then `Generate Constructors from Superclass`
+
+Select `RuntimeException(String)` and `RuntimeException(Throwable)` and press `Generate`
+
+Inside of `com.appsdeveloperblog.ws.emailnotification.error` create a new class
+
+* Name - NotRetryableException
+
+Write
+```
+public class NotRetryableException extends RuntimeException {
+```
+Then right click, click `Source` then `Generate Constructors from Superclass`
+
+Select `RuntimeException(String)` and `RuntimeException(Throwable)` and press `Generate`
+
+---
+### Configure DefaultErrorHandler with a list of not retryable exceptions
+
+In `EmailNotificationMicroservice` open `KafkaConsumerConfiguration.java`
+
+change 
+```
+@Bean
+    ConcurrentKafkaListenerContainerFactory<String, Object> kafkaListenerContainerFactory(
+            ConsumerFactory<String, Object> consumerFactory, KafkaTemplate<String Object> kafkaTemplate) {
+        
+        DefaultErrorHandler errorHandler = new DefaultErrorHandler(new DeadLetterPublishingRecoverer(kafkaTemplate));
+
+        ConcurrentKafkaListenerContainerFactory<String, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(consumerFactory);
+        factory.setCommonErrorHandler(errorHandler);
+
+        return factory;
+    }
+```
+to
+```
+@Bean
+    ConcurrentKafkaListenerContainerFactory<String, Object> kafkaListenerContainerFactory(
+            ConsumerFactory<String, Object> consumerFactory, KafkaTemplate<String Object> kafkaTemplate) {
+        
+        DefaultErrorHandler errorHandler = new DefaultErrorHandler(new DeadLetterPublishingRecoverer(kafkaTemplate));
+        errorHandler.addNotRetryableExceptions(NotRetryableException.class);
+
+        ConcurrentKafkaListenerContainerFactory<String, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(consumerFactory);
+        factory.setCommonErrorHandler(errorHandler);
+
+        return factory;
+    }
+```
+---
+### Trying how not retryable exception works
+
+In `EmailNotificationMicroservice` open `ProductCreatedEventHandler.java`
+
+Write
+```
+package com.appsdeveloperblog.ws.emailnotification.handler;
+
+import org.slf4j.Logger;
+
+@Component
+@KafkaListener(topics="product-created-events-topic")
+public class ProductCreatedEventHandler {
+
+    private final Logger LOGGER = LoggerFactory.getLogger(this.getClass());
+    
+    @KafkaHandler
+    public void handle(ProductCreatedEvent productCreatedEvent) {
+        if(true) throw new NotRetryableException("An error took place. No need to consume this message again.");
+        LOGGER.info("Received a new event: " + productCreatedEvent.getTitle());
+    }
+}
+```
+Start up `ProductsMicroservice`
+
+Next right click `EmailNotificationMicroservice` then click `Debug As` then `Spring Boot App`
+
+Open a terminal and run
+```
+./bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic product-created-events-topic.DLT --from-beginning --property print.key=true --property print.value=true
+```
+
+Go to Postman, update port number and send the request a new product - you will see a successful response
+
+Press Resume button on `ProductCreatedEventHandler.java`
+
+Check DLT by checking the terminal and seeing the raw JSON 
+
+---
+### Register RetryableException and define wait time interval
+
+In `EmailNotificationMicroservice` open `KafkaConsumerConfiguration.java`
+
+Replace
+```
+        DefaultErrorHandler errorHandler = new DefaultErrorHandler(new DeadLetterPublishingRecoverer(kafkaTemplate));
+        errorHandler.addNotRetryableExceptions(NotRetryableException.class);
+```
+with
+```
+        DefaultErrorHandler errorHandler = new DefaultErrorHandler(new DeadLetterPublishingRecoverer(kafkaTemplate);
+                new FixedBackOff(5000,3));
+        errorHandler.addNotRetryableExceptions(NotRetryableException.class);
+        errorHandler.addRetryableExceptions(RetryableException.class);
+```
+
+---
+### Throwing a RetryableException
+
+Add
+```
+@Bean
+RestTemplate getRestTemplate() {
+    return new RestTemplate();
+}
+```
+Replace all of `ProductCreatedEventHandler.java` with
+```
+package com.appsdeveloperblog.ws.emailnotification.handler;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.kafka.annotation.KafkaHandler;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestTemplate;
+
+import com.appsdeveloperblog.ws.core.ProductCreatedEvent;
+import com.appsdeveloperblog.ws.emailnotification.error.NotRetryableException;
+import com.appsdeveloperblog.ws.emailnotification.error.RetryableException;
+
+@Component
+@KafkaListener(topics = "product-created-events-topic")
+public class ProductCreatedEventHandler {
+
+    private final Logger LOGGER = LoggerFactory.getLogger(this.getClass());
+    private RestTemplate restTemplate;
+
+    public ProductCreatedEventHandler(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
+    }
+
+    @KafkaHandler
+    public void handle(ProductCreatedEvent productCreatedEvent) {
+        LOGGER.info("Received a new event: " + productCreatedEvent.getTitle());
+
+        String requestUrl = "http://localhost:8082";
+
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(requestUrl, HttpMethod.GET, null, String.class);
+
+            if (response.getStatusCode().value() == HttpStatus.OK.value()) {
+                LOGGER.info("Received response from a remote service: " + response.getBody());
+            }
+        } catch (ResourceAccessException ex) {
+            LOGGER.error(ex.getMessage());
+            throw new RetryableException(ex);
+        } catch (HttpServerErrorException ex) {
+            LOGGER.error(ex.getMessage());
+            throw new NotRetryableException(ex);
+        } catch (Exception ex) {
+            LOGGER.error(ex.getMessage());
+            throw new NotRetryableException(ex);
+        }
+    }
+}
+```
+---
+### Overview of a destination Microservice
+Download `mockservice`
+
+Right click `mockservice` and Run As Spring Boot
+
+Open a new tab in Postman
+
+send an HHTP GET request to `http://localhost:8082/response/200` and you should see HTTP status code 200
+
+---
+### Trying how retry works
+
+Open `ProductCreatedEventHandler.java` and change the request url to
+```
+String requestUrl = "http://localhost:8082/response/200";
+```
+
+Next right click `EmailNotificationMicroservice` then click `Debug As` then `Spring Boot App`
+
+Right click `mockservice` and Run As Spring Boot
+
+Start up `ProductsMicroservice` by Running As Spring Boot
+
+open terminal window and run
+```
+./bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic product-created-events-topic.DLT --property print.key=true --property print.value=true
+```
+
+copy the port number from the `ProductsMicroservice` console  
+
+Send a POST HTTP Request with JSON package
+```
+{
+    "title":"iPad Pro",
+    "price":1200,
+    "quantity":19
+}
+```
+---
+## Kafka Consumer - Multiple Consumers in a Consumer Group
+### Introduction to Kafka Consumer Groups
+
+![multiple-consumers.png](../images/multiple-consumers.png)
+* to help us scale up consumer microservice, kafka allows us to run multiple consumers in a group - this is called Consumer Group
+---
+### Rebalancing and Partition Assignment in Apache Kafka
