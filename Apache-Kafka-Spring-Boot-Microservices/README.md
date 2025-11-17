@@ -134,6 +134,24 @@ All from the very beginning, to help you learn how to create Event-Driven Micros
   - [Kafka Consumer - Multiple Consumers in a Consumer Group](#kafka-consumer---multiple-consumers-in-a-consumer-group)
     - [Introduction to Kafka Consumer Groups](#introduction-to-kafka-consumer-groups)
     - [Rebalancing and Partition Assignment in Apache Kafka](#rebalancing-and-partition-assignment-in-apache-kafka)
+    - [Assigning Microservice to a consumer group in Kafka](#assigning-microservice-to-a-consumer-group-in-kafka)
+    - [Starting up more Microservices](#starting-up-more-microservices)
+    - [Trying how partitions assignment works in Kafka](#trying-how-partitions-assignment-works-in-kafka)
+    - [Multiple consumers consuming messages from Kafka topic](#multiple-consumers-consuming-messages-from-kafka-topic)
+    - [Quiz 8: Apache Kafka Consumer Groups](#quiz-8-apache-kafka-consumer-groups)
+  - [Idempotent Consumer in Kafka](#idempotent-consumer-in-kafka)
+    - [Idempotent Consumer - Introduction](#idempotent-consumer---introduction)
+    - [Include a unique id into message header](#include-a-unique-id-into-message-header)
+    - [Reading a unique id from message header](#reading-a-unique-id-from-message-header)
+    - [Adding database-related dependencies](#adding-database-related-dependencies)
+    - [Configure database connection details](#configure-database-connection-details)
+    - [Creating JPA Entity](#creating-jpa-entity)
+    - [Create JPA Repository](#create-jpa-repository)
+    - [Storing a unique message id in a database table](#storing-a-unique-message-id-in-a-database-table)
+    - [Check if Kafka message was processed earlier](#check-if-kafka-message-was-processed-earlier)
+    - [Trying how it works](#trying-how-it-works)
+  - [Apache Kafka Transactions](#apache-kafka-transactions)
+    - [Introduction to Transactions in Apache Kafka](#introduction-to-transactions-in-apache-kafka)
 
 ---
 ## Introduction to Apache Kafka
@@ -2238,3 +2256,473 @@ Send a POST HTTP Request with JSON package
 * to help us scale up consumer microservice, kafka allows us to run multiple consumers in a group - this is called Consumer Group
 ---
 ### Rebalancing and Partition Assignment in Apache Kafka
+
+![rebalancing-partition.png](../images/rebalancing-partition.png)
+
+* when we have only one consumer microservice then this consumer will read messages from all 3 partitions in a topic
+* when we have two, kafka will reassign partitions amongst these 2 consumer applications
+* this process of automatic partition reassignment is called rebalancing
+* if we have more consumers than partitions, one consumer will stay idle as 2 consumers from the same consumer group cannot read messages from the same partition
+* you cannot start more consumers than the number of partitions in the topic
+* while your kafka consumer microservices are running, each of them will be sending heartbeat signals to Kafka broker, letting it know that it can consume new messages
+* Heartbeats are sent at regulat intervals (default = 3 seconds)
+* when kafka broker notices that there are no heartbeats coming from consumer it will remove this consumer
+
+---
+### Assigning Microservice to a consumer group in Kafka
+
+In `EmailNotificationMicroservice` open `application.properties`
+
+Change
+```
+spring.kafka.consumer.group-id=product-created-events
+```
+to
+```
+consumer.group-id=product-created-events
+```
+
+In `EmailNotificationMicroservice` open `KafkaConsumerConfiguration.java`
+
+Change 
+```
+config.put(ConsumerConfig.GROUP_ID_CONFIG, environment.getProperty("spring.kafka.consumer.group-id"));
+```
+to
+```
+config.put(ConsumerConfig.GROUP_ID_CONFIG, environment.getProperty("consumer.group-id"));
+```
+
+---
+### Starting up more Microservices
+
+In `EmailNotificationMicroservice` open `application.properties` 
+
+Make sure 
+```
+server.port=0
+```
+this will make a microservice application start on a random port number that will not conflict with other microservices
+
+Open terminal window
+
+`cd` to home folder of `EmailNotificationMicroservice`
+
+Run
+```
+mvn spring-boot:run
+```
+
+Open a new terminal window
+
+`cd` to home folder of `EmailNotificationMicroservice`
+
+Run again
+```
+mvn spring-boot:run
+```
+
+You will now have two instances of `EmailNotificationMicroservice` running
+
+Repeat to get 3 instances running
+
+---
+### Trying how partitions assignment works in Kafka
+
+Press `CTRL + C` on all 3 windows to stop all 3 instances
+
+Start them one by one again by running
+```
+mvn spring-boot:run
+```
+Once you start the second consumer in the same consumer group you will see log messages that indicate rebalancing took place and partitions were reassigned among these two consumers
+
+---
+### Multiple consumers consuming messages from Kafka topic
+
+Press `CTRL + C` on all 3 windows to stop all 3 instances
+
+In `EmailNotificationMicroservice` open `ProductCreatedEventHandler.java`
+
+Change
+```
+@KafkaHandler
+public void handle(ProductCreatedEvent productCreatedEvent) {
+    LOGGER.info("Received a new event: " + productCreatedEvent.getTitle());
+```
+to
+```
+@KafkaHandler
+public void handle(ProductCreatedEvent productCreatedEvent) {
+    LOGGER.info("Received a new event: " + productCreatedEvent.getTitle() + " with productId: " 
+            + productCreatedEvent.getProductId());
+```
+
+Start one instance
+```
+mvn spring-boot:run
+```
+Start 2 more instances
+
+Start up `ProductsMicroservice` and `mockservice`
+
+Go to Postman and send an HTTP request with the new port number
+
+In the terminals you should see that only one terminal window shows the message not the other 2
+
+---
+### Quiz 8: Apache Kafka Consumer Groups
+
+**Q1: What is the primary function of Consumer Groups in Apache Kafka?**  
+**A: To enable parallel processing of messages from a topic by multiple consumers.**  
+Consumer groups in Kafka allow multiple consumers to form a group and collaboratively process messages from a topic, enabling parallel processing. Each consumer in the group reads messages from one or more partitions of the topic, enhancing throughput and scalability.
+
+**Q2: What happens when a new consumer joins a consumer group in Kafka?**  
+**A: Kafka rebalances the topic partitions among all consumers in the group.**  
+When a new consumer joins a consumer group, Kafka triggers a rebalance of the topic partitions among all consumers in the group. This rebalancing ensures that the message load is distributed evenly across the consumers, optimizing parallel processing and resource utilization.
+
+**Q3: How does Kafka manage message distribution to consumers within a consumer group?**  
+**A: By sending each message to only one consumer in the group.**  
+Kafka ensures message delivery to consumers in a group by assigning each message to only one consumer within that group. This prevents duplicate processing of the same message by multiple consumers, ensuring efficient and coordinated message handling.
+
+**Q4: How does Apache Kafka assign partitions to consumers within a consumer group?**  
+**A: Each consumer in a group is assigned a unique set of partitions from multiple topics.**  
+Kafka assigns each consumer in a consumer group a unique set of partitions from the topics they subscribe to. This partition assignment ensures that each partition is processed by only one consumer in the group, enabling efficient parallel processing and balanced workload distribution.
+
+**Q5: What determines the number of partitions a consumer in a group can process in Kafka?**  
+**A: The number of partitions in the topic and the number of consumers in the consumer group.**  
+The number of partitions that a consumer can process is determined by the total number of partitions in the topic and the number of consumers in the consumer group. Kafka balances the partition assignments across consumers to ensure even distribution and efficient message processing.
+
+**Q6: What happens if the number of consumers in a Kafka Consumer Group exceeds the number of partitions in a topic?**  
+**A: Some consumers will sit idle and will not be assigned any partitions.**  
+If the number of consumers in a consumer group exceeds the number of partitions in the topic, some consumers will remain idle without any assigned partitions. This occurs because Kafka ensures that each partition is consumed by only one consumer within the group.
+
+**Q7: What happens when a consumer in a Kafka Consumer Group shuts down?**  
+**A: Kafka rebalances the partitions, reassigning them among the remaining consumers.**  
+When a consumer in a consumer group shuts down, Kafka triggers a rebalance of the partitions. The partitions previously assigned to the shutdown consumer are reassigned to the remaining active consumers in the group, ensuring uninterrupted message processing and system reliability.
+
+---
+## Idempotent Consumer in Kafka
+### Idempotent Consumer - Introduction
+
+* an idempotent Apache Kafka consumer is a consumer that can process the same message multiple times without causing any side effects or data inconsistencies
+* avoiding duplicate messages
+  * idempotent consumer
+  * idempotent producer
+  * transactions
+
+![idempotent-consumer.png](../images/idempotent-consumer.png)
+
+---
+### Include a unique id into message header
+
+Open `ProductServiceImpl.java`
+
+Change 
+```
+LOGGER.info("Before publishing a ProductCreatedEvent");
+
+        SendResult<String, ProductCreatedEvent> result =
+                kafkaTemplate.send("product-created-events-topic", productId, productCreatedEvent
+
+        LOGGER.info("Partition: " + result.getRecordMetadata().partition());
+        LOGGER.info("Topic: " + result.getRecordMetadata().topic());
+        LOGGER.info("Offset: " + result.getRecordMetadata().offset());
+```
+to
+```
+LOGGER.info("Before publishing a ProductCreatedEvent");
+
+    ProducerRecord<String, ProductCreatedEvent> record = new ProducerRecord<>(
+            "product-created-events-topic",
+            productId,
+            productCreatedEvent);
+    record.headers().add("messageId", UUID.randomUUID().toString().getBytes());
+
+    SendResult<String, ProductCreatedEvent> result =
+            kafkaTemplate.send(record).get();
+
+    LOGGER.info("Partition: " + result.getRecordMetadata().partition());
+    LOGGER.info("Topic: " + result.getRecordMetadata().topic());
+    LOGGER.info("Offset: " + result.getRecordMetadata().offset());
+```
+
+---
+### Reading a unique id from message header
+
+Open `ProductCreatedEventHandler.java`
+
+Change `@KafkaHandler` to this
+```
+@KafkaHandler
+    public void handle(@Payload ProductCreatedEvent productCreatedEvent,
+                      @Header("messageId") String messageId,
+                      @Header(KafkaHeaders.RECEIVED_KEY) String messageKey) {
+        LOGGER.info("Received a new event: " + productCreatedEvent.getTitle() + " with productId: "
+                   + productCreatedEvent.getProductId());
+
+        String requestUrl = "http://localhost:8082/response/200";
+```
+
+---
+### Adding database-related dependencies
+
+Open a browser and visit `mvnrepository.com`
+
+Search for H2 and install the latest version of `H2 Database Engine`
+
+Search for `Spring Boot Starter Data JPA` and install the latest version
+
+Open `pom.xml` in `EmailNotificationMicroservice` and add depenedencies
+```
+<!-- https://mvnrepository.com/artifact/com.h2database/h2 -->
+<dependency>
+    <groupId>com.h2database</groupId>
+    <artifactId>h2</artifactId>
+</dependency>
+<!--
+https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-starter-data-jpa -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-jpa</artifactId>
+</dependency>-->
+
+
+</dependencies>
+```
+
+---
+### Configure database connection details
+
+In `EmailNotificationMicroservice` open `application.properties` 
+
+Add
+```
+spring.datasource.username=sergey
+spring.datasource.password=sergey
+spring.datasource.url=jdbc:h2:mem:testdb
+spring.datasource.driverClassName=org.h2.Driver
+spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+spring.h2.console.enabled=true
+```
+
+---
+### Creating JPA Entity
+
+select root package `com.appsdeveloperblog.ws.emailnotification` and create a new class
+* Name - `ProcessedEventEntity`
+* Package - `com.appsdeveloperblog.ws.emailnotification.io`
+* click `Add...` and choose `Serializable - java.io`
+
+Hover over `ProcessedEventEntity` and click `Add generated serial version ID`
+
+Write so it looks like this
+```
+package com.appsdeveloperblog.ws.emailnotification.io;
+
+import java.io.Serializable;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+
+@Entity
+@Table(name="processed-events")
+public class ProcessedEventEntity implements Serializable {
+
+    private static final long serialVersionUID = 3687553269742697084L;
+    
+    @Id
+    @GeneratedValue
+    private long id;
+    
+    @Column(nullable=false, unique=true)
+    private String messageId;
+    
+    @Column(nullable=false)
+    private String productId;
+    
+}
+```
+Press generate getters and setters and only check `id`, `messageId` and `productId`
+
+Then after 
+```
+@Column(nullable=false, unique=true)
+private String messageId;
+```
+press generate constructor using fields and only check `messageId` and `productId`
+
+Then generate a second constructor but uncheck everything
+
+---
+### Create JPA Repository
+
+select root package `com.appsdeveloperblog.ws.emailnotification` and create a new interface
+* Name - `ProcessedEventRepository`
+
+Write
+```
+package com.appsdeveloperblog.ws.emailnotification.io;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface ProcessedEventRepository extends JpaRepository<ProcessedEventEntity, Long> {
+
+}
+```
+
+---
+### Storing a unique message id in a database table
+
+Open `ProductCreatedEventHandler.java`
+
+Change it to this
+```
+package com.appsdeveloperblog.ws.emailnotification.handler;
+
+import org.slf4j.Logger;
+
+@Component
+@KafkaListener(topics = "product-created-events-topic")
+public class ProductCreatedEventHandler {
+
+    private final Logger LOGGER = LoggerFactory.getLogger(this.getClass());
+    private RestTemplate restTemplate;
+    private ProcessedEventRepository processedEventRepository;
+
+    public ProductCreatedEventHandler(RestTemplate restTemplate, ProcessedEventRepository processedEventRepository) {
+        this.restTemplate = restTemplate;
+        this.processedEventRepository = processedEventRepository;
+    }
+
+    @Transactional
+    @KafkaHandler
+    public void handle(@Payload ProductCreatedEvent productCreatedEvent, @Header("messageId") String messageId,
+                      @Header(KafkaHeaders.RECEIVED_KEY) String messageKey) {
+        LOGGER.info("Received a new event: " + productCreatedEvent.getTitle() + " with productId: "
+                + productCreatedEvent.getProductId());
+
+        String requestUrl = "http://localhost:8082/response/200";
+
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(requestUrl, HttpMethod.GET, null, String.class);
+
+            if (response.getStatusCode().value() == HttpStatus.OK.value()) {
+                LOGGER.info("Received response from a remote service: " + response.getBody());
+            }
+        } catch (ResourceAccessException ex) {
+            LOGGER.error(ex.getMessage());
+            throw new RetryableException(ex);
+        } catch (HttpServerErrorException ex) {
+            LOGGER.error(ex.getMessage());
+            throw new NotRetryableException(ex);
+        } catch (Exception ex) {
+            LOGGER.error(ex.getMessage());
+            throw new NotRetryableException(ex);
+        }
+
+        // Save a unique message id in a database table
+        try {
+            processedEventRepository.save(new ProcessedEventEntity(messageId, productCreatedEvent.getProductId()));
+        } catch (DataIntegrityViolationException ex) {
+            throw new NotRetryableException(ex);
+        }
+    }
+
+}
+```
+
+---
+### Check if Kafka message was processed earlier
+
+Open `ProcessedEventRepository.java` and write
+```
+package com.appsdeveloperblog.ws.emailnotification.io;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+@Repository
+public interface ProcessedEventRepository extends JpaRepository<ProcessedEventEntity, Long> {
+    ProcessedEventEntity findByMessageId(String messageId);
+}
+```
+
+In `ProductCreatedEventHandler.java` change to
+```
+@Transactional
+    @KafkaHandler
+    public void handle(@Payload ProductCreatedEvent productCreatedEvent, @Header("messageId") String messageId,
+                      @Header(KafkaHeaders.RECEIVED_KEY) String messageKey) {
+        LOGGER.info("Received a new event: " + productCreatedEvent.getTitle() + " with productId: "
+                + productCreatedEvent.getProductId());
+
+        // Check if this message was already processed before
+        ProcessedEventEntity existingRecord = processedEventRepository.findByMessageId(messageId);
+        
+        if(existingRecord!=null) {
+            LOGGER.info("Found a duplicate message id: {}", existingRecord.getMessageId());
+            return;
+        }
+
+        String requestUrl = "http://localhost:8082/response/200";
+```
+
+---
+### Trying how it works
+
+Open Boot Dashboard and debug `EmailNotificationMicroservice`
+
+Start `mockservice` and `ProductsMicroservice`
+
+Open `ProductServiceImpl` and replace
+```
+record.headers().add("messageId", UUID.randomUUID().toString().getBytes());
+```
+with
+```
+record.headers().add("messageId", "123".getBytes());
+```
+Stop `ProductsMicroservice` and run it again
+
+Go to Postman, update the port number and send HTTP request 
+
+Find the port number from `EmailNotificationMicroservice` and open a browser and go to `localhost:<PORT-NUMBER>/h2-console`
+
+change `JDBC URL` to
+```
+jdbc:h2:mem:testdb
+```
+and username and password to
+```
+sergey
+```
+press connect
+
+click on processed-events and click run. You should see the Message Id we hardcoded `123`
+
+Go to Postman and repeat the HTTP request 
+
+Run processed-events again and you should not see any duplicates
+
+Open `ProductServiceImpl` and replace
+```
+record.headers().add("messageId", "123".getBytes());
+
+```
+with
+```
+record.headers().add("messageId", UUID.randomUUID().toString().getBytes());
+```
+Copy the new port number, go to Postman and repeat the HTTP request
+
+You will see more message IDs
+
+---
+## Apache Kafka Transactions
+### Introduction to Transactions in Apache Kafka
+
