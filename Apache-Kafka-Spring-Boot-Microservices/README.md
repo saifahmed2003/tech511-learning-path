@@ -152,6 +152,19 @@ All from the very beginning, to help you learn how to create Event-Driven Micros
     - [Trying how it works](#trying-how-it-works)
   - [Apache Kafka Transactions](#apache-kafka-transactions)
     - [Introduction to Transactions in Apache Kafka](#introduction-to-transactions-in-apache-kafka)
+    - [Enable Kafka Transactions in application.properties](#enable-kafka-transactions-in-applicationproperties)
+    - [Enable Kafka Transactions in the @Bean method](#enable-kafka-transactions-in-the-bean-method)
+    - [Apache Kafka and @Transactional annotation](#apache-kafka-and-transactional-annotation)
+    - [Rollback transaction for specific exception](#rollback-transaction-for-specific-exception)
+    - [Reading committed messages in Kafka Consumer](#reading-committed-messages-in-kafka-consumer)
+    - [Trying how Kafka Transactions work](#trying-how-kafka-transactions-work)
+    - [Apache Kafka local transactions with KafkaTemplate](#apache-kafka-local-transactions-with-kafkatemplate)
+  - [Apache Kafka and Database transactions](#apache-kafka-and-database-transactions)
+    - [Kafka \& Database transactions - Introduction](#kafka--database-transactions---introduction)
+    - [Creating Jpa Transaction Manager](#creating-jpa-transaction-manager)
+    - [Synchronized Transaction: Saving to database](#synchronized-transaction-saving-to-database)
+    - [Enable logging for Kafka and Jpa Transaction Managers](#enable-logging-for-kafka-and-jpa-transaction-managers)
+    - [Trying how synchronized transactions work](#trying-how-synchronized-transactions-work)
 
 ---
 ## Introduction to Apache Kafka
@@ -2726,3 +2739,207 @@ You will see more message IDs
 ## Apache Kafka Transactions
 ### Introduction to Transactions in Apache Kafka
 
+Why use transaction in Apache Kafka?
+* All or nothing
+* Exactly one
+  * Idempotent Producer
+  * Transactions
+* transactions help us to write to multiple topics atomically
+
+once the transaction is completed successfully messages are uncommitted and consumers only read committed messages
+
+![transactions.png](../images/transactions.png)
+
+---
+### Enable Kafka Transactions in application.properties
+
+Download the source code from this course
+
+In `TransferService` open `application.properties`
+
+Add
+```
+spring.kafka.producer.transaction-id-prefix=transfer-service-${random.value}-
+
+logging.level.org.springframework.kafka.transaction=TRACE
+logging.level.org.springframework.transaction=TRACE
+```
+
+---
+### Enable Kafka Transactions in the @Bean method
+
+In `TransferService` open `KafkaConfig.java`
+
+Add
+```
+@Value("${spring.kafka.producer.transaction-id-prefix}")
+private String transactionalIdPrefix;
+```
+Add
+```
+props.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalIdPrefix);
+```
+Add
+```
+@Bean
+KafkaTransactionManager<String, Object> kafkaTransactionManager(ProducerFactory<String, Object> producerFactory) {
+    return new KafkaTransactionManager<>(producerFactory);
+}
+```
+
+---
+### Apache Kafka and @Transactional annotation
+
+In `TransferService` open `TransferServiceImpl.java`
+
+Above `@Override` add
+```
+@Transactional(value="kafkaTransactionManager")
+@Override
+```
+
+---
+### Rollback transaction for specific exception
+
+In `TransferService` open `TransferServiceImpl.java`
+
+Change `@Transactional`
+```
+@Transactional(value="kafkaTransactionManager", 
+        rollbackFor= { TransferServiceException.class, ConnectException.class}, 
+        noRollbackFor= {SpecificException.class})
+```
+
+---
+### Reading committed messages in Kafka Consumer
+
+In `WithdrawService` open `application.properties`
+
+Add
+```
+spring.kafka.consumer.isolation-level=READ_COMMITTED
+```
+Open `KafkaConsumerConfiguration.java` and add
+```
+config.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, environment.getProperty("spring.kafka.consumer.isolation-level", "READ_COMMITTED").toLowerCase());
+```
+
+---
+### Trying how Kafka Transactions work
+
+Start `TransferService` as Spring Boot App in Debug mode
+
+Start `mockservice` as Spring Boot App
+
+Start `DepositService` as Spring Boot App
+
+Start `WithdrawalService` as Spring Boot App
+
+You will be able to see all of their port numbers on the Boot Dashboard
+
+Open a new Postman tab and use url but replace with the port number
+```
+http://localhost:<TransferServicePortNumber>
+```
+Select `POST`
+
+Select `Body`, `raw` and `JSON` and write
+```
+{
+    "senderId":"123",
+    "recepientId":"124",
+    "amount":123
+}
+```
+Send the HTTP Request and check the logs for success
+
+---
+### Apache Kafka local transactions with KafkaTemplate
+
+```
+boolean returnValue = kafkaTemplate.executeInTransaction(t -> {
+```
+can throw exception
+
+`@Transactional` means if exception occurs anywhere in this message then kafka transaction will be rolled back
+
+---
+## Apache Kafka and Database transactions
+### Kafka & Database transactions - Introduction
+
+![nested-method.png](../images/nested-method.png)
+
+---
+### Creating Jpa Transaction Manager
+
+Download new source code
+
+Open `KafkaConfig.java` and replace with
+```
+@Bean("kafkaTransactionManager")
+KafkaTransactionManager<String, Object> kafkaTransactionManager(ProducerFactory<String, Object> producerFactory) {
+    return new KafkaTransactionManager<>(producerFactory);
+}
+```
+Open `TransferServiceImpl.java` and replace with
+```
+@Transactional("kafkaTransactionManager")
+```
+Open `KafkaConfig.java` and add
+```
+@Bean("transactionManager")
+JpaTransactionManager jpaTransactionManager(EntityManagerFactory entityManagerFactory) {
+    return new JpaTransactionManager(entityManagerFactory);
+}
+```
+
+---
+### Synchronized Transaction: Saving to database
+
+Open `TransferServiceImpl.java` and replace with
+```
+public TransferServiceImpl(KafkaTemplate<String, Object> kafkaTemplate, Environment environment,
+                          RestTemplate restTemplate, TransferRepository transferRepository) {
+    this.kafkaTemplate = kafkaTemplate;
+    this.environment = environment;
+    this.restTemplate = restTemplate;
+    this.transferRepository = transferRepository;
+}
+
+@Transactional("TransactionManager")
+@Override
+public boolean transfer(TransferRestModel transferRestModel) {
+    WithdrawalRequestedEvent withdrawalEvent = new WithdrawalRequestedEvent((transferRestModel.getSenderId(),
+            transferRestModel.getRecepientId(), transferRestModel.getAmount());
+    DepositRequestedEvent depositEvent = new DepositRequestedEvent(transferRestModel.getSenderId(),
+            transferRestModel.getRecepientId(), transferRestModel.getAmount());
+    
+    TransferEntity transferEntity = new TransferEntity();
+    BeanUtils.copyProperties(transferRestModel, transferEntity);
+    transferEntity.setTransferId(Uuid.randomUuid().toString());
+    
+    try {
+        
+        // Save record to a database table
+        transferRepository.save(transferEntity);
+```
+
+---
+### Enable logging for Kafka and Jpa Transaction Managers
+
+In `TransferService` in `application.properties` add
+```
+logging.level.org.springframework.orgm.jpa.JpaTransactionManager=DEBUG
+```
+and set all `logging.level` to `=DEBUG`
+
+then change to
+```
+logging.level.org.springframework.kafka.transaction.KafkaTransactionManager=DEBUG
+```
+then add
+```
+logging.level.org.apache.kafka.clients.producer.internals.TransactionManager=DEBUG
+```
+---
+### Trying how synchronized transactions work
