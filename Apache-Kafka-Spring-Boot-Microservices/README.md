@@ -165,6 +165,28 @@ All from the very beginning, to help you learn how to create Event-Driven Micros
     - [Synchronized Transaction: Saving to database](#synchronized-transaction-saving-to-database)
     - [Enable logging for Kafka and Jpa Transaction Managers](#enable-logging-for-kafka-and-jpa-transaction-managers)
     - [Trying how synchronized transactions work](#trying-how-synchronized-transactions-work)
+  - [Integration Testing - Kafka Producer](#integration-testing---kafka-producer)
+    - [Test class annotations](#test-class-annotations)
+    - [Creating an empty test method](#creating-an-empty-test-method)
+    - [Different ways to execute test methods](#different-ways-to-execute-test-methods)
+    - [Test method structure. Arrange, Act and Assert.](#test-method-structure-arrange-act-and-assert)
+    - [Implementing the Arrange and Act sections](#implementing-the-arrange-and-act-sections)
+    - [Kafka Consumer Configuration in a Test Class](#kafka-consumer-configuration-in-a-test-class)
+    - [The setUp() and tearDown() methods](#the-setup-and-teardown-methods)
+    - [The Assert section](#the-assert-section)
+    - [Verify Kafka Producer Configuration Properties - Introduction](#verify-kafka-producer-configuration-properties---introduction)
+    - [Test Method for Idempotent Kafka Producer](#test-method-for-idempotent-kafka-producer)
+  - [Integration Testing - Kafka Consumer](#integration-testing---kafka-consumer)
+    - [Creating a new test class](#creating-a-new-test-class)
+    - [The 'Arrange' section](#the-arrange-section)
+    - [Mocking objects](#mocking-objects)
+    - [The 'Act' and 'Assert' sections](#the-act-and-assert-sections)
+    - [Testing Kafka Consumer - Trying how it works](#testing-kafka-consumer---trying-how-it-works)
+  - [Saga design pattern with Apache Kafka](#saga-design-pattern-with-apache-kafka)
+    - [Coreography-Based Saga](#coreography-based-saga)
+    - [Orchestration-Based Saga](#orchestration-based-saga)
+    - [Quiz 9: Saga design pattern](#quiz-9-saga-design-pattern)
+    - [Reserve Product in Stock - Introduction](#reserve-product-in-stock---introduction)
 
 ---
 ## Introduction to Apache Kafka
@@ -2839,7 +2861,7 @@ You will be able to see all of their port numbers on the Boot Dashboard
 
 Open a new Postman tab and use url but replace with the port number
 ```
-http://localhost:<TransferServicePortNumber>
+http://localhost:<TransferServicePortNumber>/transfers
 ```
 Select `POST`
 
@@ -2943,3 +2965,693 @@ logging.level.org.apache.kafka.clients.producer.internals.TransactionManager=DEB
 ```
 ---
 ### Trying how synchronized transactions work
+
+Start all 3 kafka service
+
+Start `TransferService` as Spring Boot App
+
+Start `mockservice` as Spring Boot App
+
+Start `DepositService` as Spring Boot App
+
+Start `WithdrawalService` as Spring Boot App
+
+Open Postman and send HTTP Request with new port number of `TransferService`
+
+```
+http://localhost:<TransferServicePortNumber>/transfers
+```
+
+Open a browser and go to 
+```
+localhost:<TRANSFERSERVICE-PORT-NUMBER>/h2-console
+```
+Enter password to login
+```
+sergey
+```
+press connect
+
+Select `TRANSFERS` in the sidebar and press `Run Selected`
+
+You will see the JSON values
+
+Stop `mockservice`
+
+Open Postman and send HTTP Request with new port number of `TransferService` but change `amount` to 10 instead of 0
+
+You will see an error
+
+In the browser Select `TRANSFERS` in the sidebar and press `Run Selected`
+
+You will not see any changes
+
+---
+## Integration Testing - Kafka Producer
+### Test class annotations
+
+Create a new class in `com.appsdeveloperblog.ws.products` with Name `ProductsServiceIntegrationTest`
+
+Annotate it like this
+```
+package com.appsdeveloperblog.ws.products;
+
+import org.junit.jupiter.api.TestInstance;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.test.context.EmbeddedKafka;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
+
+@DirtiesContext
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@ActiveProfiles("test") // application-test.properties
+@EmbeddedKafka(partitions=3, count=3, controlledShutdown=true)
+@SpringBootTest(properties="spring.kafka.producer.bootstrap-servers=${spring.embedded.kafka.brokers}")
+public class ProductsServiceIntegrationTest {
+
+}
+```
+
+---
+### Creating an empty test method
+
+Add so `ProductsServiceIntegrationTest` looks like this
+```
+package com.appsdeveloperblog.ws.products;
+
+import org.junit.jupiter.api.TestInstance;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.test.context.EmbeddedKafka;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
+
+@DirtiesContext
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@ActiveProfiles("test") // application-test.properties
+@EmbeddedKafka(partitions=3, count=3, controlledShutdown=true)
+@SpringBootTest(properties="spring.kafka.producer.bootstrap-servers=${spring.embedded.kafka.brokers}")
+public class ProductsServiceIntegrationTest {
+
+    @Test
+    void testCreateProduct_whenGivenValidProductDetails_successfulSendsKafkaMessage() {
+
+    }
+
+}
+```
+---
+### Different ways to execute test methods
+
+You will see the test method in the sidebar under `ProductsServiceIntegrationTest`
+
+Right mouse click `ProductsServiceIntegrationTest` and Run As JUnit Test
+
+Right mouse click `ProductsMicroservice [boot]` and select show in terminal
+
+run
+```
+./mvnw test
+```
+
+run
+```
+./mvnw test -Dtest=ProductsServiceIntegrationTest
+```
+
+run
+```
+./mvnw test -Dtest=ProductsServiceIntegrationTest#testCreateProduct_whenGivenValidProductDetails_successfulSendsKafkaMessage
+```
+
+---
+### Test method structure. Arrange, Act and Assert.
+
+Add so `ProductsServiceIntegrationTest` looks like this
+```
+package com.appsdeveloperblog.ws.products;
+
+import org.junit.jupiter.api.TestInstance;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.test.context.EmbeddedKafka;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
+
+@DirtiesContext
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@ActiveProfiles("test") // application-test.properties
+@EmbeddedKafka(partitions=3, count=3, controlledShutdown=true)
+@SpringBootTest(properties="spring.kafka.producer.bootstrap-servers=${spring.embedded.kafka.brokers}")
+public class ProductsServiceIntegrationTest {
+
+    @Test
+    void testCreateProduct_whenGivenValidProductDetails_successfulSendsKafkaMessage() {
+
+        // Arrange
+
+        // Act
+
+        // Assert
+
+    }
+
+}
+```
+---
+### Implementing the Arrange and Act sections
+
+Add so `ProductsServiceIntegrationTest` looks like this
+```
+package com.appsdeveloperblog.ws.products;
+
+import java.math.BigDecimal;
+
+@DirtiesContext
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@ActiveProfiles("test") // application-test.properties
+@EmbeddedKafka(partitions=3, count=3, controlledShutdown=true)
+@SpringBootTest(properties="spring.kafka.producer.bootstrap-servers=${spring.embedded.kafka.brokers}")
+public class ProductsServiceIntegrationTest {
+
+    @Autowired
+    private ProductService productService;
+
+    @Test
+    void testCreateProduct_whenGivenValidProductDetails_successfullySendsKafkaMessage() throws Exception {
+    
+        // Arrange
+        
+        String title="iPhone 11";
+        BigDecimal price = new BigDecimal(600);
+        Integer quantity = 1;
+        
+        CreateProductRestModel createProductRestModel = new CreateProductRestModel();
+        createProductRestModel.setPrice(price);
+        createProductRestModel.setQuantity(quantity);
+        createProductRestModel.setTitle(title);
+        
+        // Act
+        
+        productService.createProduct(createProductRestModel);
+        
+        // Assert
+        
+    }
+
+}
+```
+---
+### Kafka Consumer Configuration in a Test Class
+
+Under `// Assert` write
+
+```
+// Assert
+    
+    
+private Map<String, Object> getConsumerProperties() {
+        return Map.of(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, embeddedKafkaBroker.getBrokersAsString(),
+            ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
+            ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class,
+            ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class,
+            ConsumerConfig.GROUP_ID_CONFIG, environment.getProperty("spring.kafka.consumer.group-id"),
+            JsonDeserializer.TRUSTED_PACKAGES, environment.getProperty("spring.kafka.consumer.properties.spring.json.trusted.packages"),
+            ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, environment.getProperty("spring.kafka.consumer.auto-offset-reset")
+        );
+    }
+    
+}
+```
+
+Below `@Autowired` write another
+
+```
+@Autowired
+private ProductService productService;
+
+@Autowired
+private EmbeddedKafkaBroker embeddedKafkaBroker;
+
+@Autowired
+Environment environment;
+```
+
+In `ProductsMicroservice [boot]` right mouse click `src/test/java` select New Folder
+
+Name it `resources`
+
+Right mouse click `src/test/resources` select New Folder
+
+Name it `application-test.properties`
+
+Write in it
+```
+spring.kafka.consumer.group-id=product-created-events
+spring.kafka.consumer.properties.spring.json.trusted.packages=com.appsdeveloperblog.ws.core
+spring.kafka.consumer.auto-offset-reset=earliest
+products-created-events-topic-name=product-created-events-topic
+```
+---
+### The setUp() and tearDown() methods
+
+Add to `ProductsServiceIntegrationTest`
+
+```
+    @Autowired
+    Environment environment;
+    
+    private KafkaMessageListenerContainer<String, ProductCreatedEvent> container;
+    private BlockingQueue<ConsumerRecord<String, ProductCreatedEvent>> records;
+    
+    @BeforeAll
+    void setup() {
+        DefaultKafkaConsumerFactory<String, Object> consumerFactory = new DefaultKafkaConsumerFactory<>(getConsumerProperties());
+        
+        ContainerProperties containerProperties = new ContainerProperties(environment.getProperty("product-created-events-topic-name"));
+        container = new KafkaMessageListenerContainer<>(consumerFactory, containerProperties);
+        records = new LinkedBlockingQueue<>();
+        container.setupMessageListener((MessageListener<String, ProductCreatedEvent>) records::add);
+        container.start();
+        ContainerTestUtils.waitForAssignment(container, embeddedKafkaBroker.getPartitionsPerTopic());
+    }
+```
+
+and at the end
+```
+@AfterAll
+void tearDown() {
+    container.stop();
+}
+```
+---
+### The Assert section
+
+Under `// Assert` write
+
+```
+// Assert
+ConsumerRecord<String, ProductCreatedEvent> message = records.poll(3000, TimeUnit.MILLISECONDS);
+assertNotNull(message);
+assertNotNull(message.key());
+ProductCreatedEvent productCreatedEvent = message.value();
+assertEquals(createProductRestModel.getQuantity(), productCreatedEvent.getQuantity());
+assertEquals(createProductRestModel.getTitle(), productCreatedEvent.getTitle());
+assertEquals(createProductRestModel.getPrice(), productCreatedEvent.getPrice());
+}
+
+private Map<String, Object> getConsumerProperties() {
+```
+Right mouse click text editor and click Run As JUnit Test
+
+---
+### Verify Kafka Producer Configuration Properties - Introduction
+
+As developers, we often focus on writing and testing the business logic of our applications, but I think it is equally important to ensure that our Kafka producers are correctly configured.
+
+The configuration of a Kafka producer can significantly impact how our application works. Therefore, I think it is a good practice to write tests that verify producer configuration properties as well.
+
+In the following two lessons, we are going to focus on a specific part of the producer configuration which is making our producer idempotent.
+
+In Apache Kafka, an idempotent producer is a type of producer that guarantees that messages are delivered exactly once, even in the event of retries or failures. This means that if a producer sends the same message multiple times, the message will only be written to the Kafka topic once, preventing duplicates.
+
+When working with distributed systems like Kafka, it's essential to handle scenarios where messages might be sent multiple times due to network issues, broker failures, or other types of errors. Without idempotence, these retries could lead to duplicate messages being written to the topic, which can cause data inconsistencies and other issues in downstream consumers.
+
+The good news is that idempotency has been enabled in the Apache Kafka producer by default since version 3.0. This is achieved with the following configuration property:
+```
+spring.kafka.producer.properties.enable.idempotence=true
+```
+However, there are other configuration properties that, if set to incorrect values, can make your Kafka producer non-idempotent.
+
+To make you Kafka producer idempotent, you typically make sure the following properties are set with correct values:
+```
+spring.kafka.producer.properties.enable.idempotence=true
+spring.kafka.producer.acks=all
+spring.kafka.producer.properties.max.in.flight.requests.per.connection=5
+spring.kafka.producer.properties.retries=2147483647
+```
+
+In the production app, I configured the idempotent producer using the @Bean method.
+```
+@Configuration
+public class KafkaConfig {
+ 
+@Value("${spring.kafka.producer.bootstrap-servers}")
+private String bootstrapServers;
+ 
+@Value("${spring.kafka.producer.key-serializer}")
+private String keySerializer;
+ 
+@Value("${spring.kafka.producer.value-serializer}")
+private String valueSerializer;
+ 
+@Value("${spring.kafka.producer.acks}")
+private String acks;
+ 
+@Value("${spring.kafka.producer.properties.enable.idempotence}")
+private boolean idempotence;
+ 
+@Value("${spring.kafka.producer.properties.max.in.flight.requests.per.connection}")
+private int inflightRequests;
+ 
+public Map<String, Object> producerConfigs() {
+Map<String, Object> props = new HashMap<>();
+props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, keySerializer);
+props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, valueSerializer);
+
+// Idempotent Producer
+props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, idempotence);
+props.put(ProducerConfig.ACKS_CONFIG, acks);
+props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, inflightRequests);
+ 
+ 
+return props;
+}
+}
+```
+
+And in the application.properties file, I have:
+```
+spring.kafka.producer.properties.enable.idempotence=true
+spring.kafka.producer.acks=all
+spring.kafka.producer.properties.max.in.flight.requests.per.connection=5
+```
+These configuration properties are then used in the same KafkaConfig class to create KafkaProducerFactory and KafkaTempalate objects.
+```
+@Bean
+ProducerFactory<String, ProductCreatedEvent> producerFactory() {
+return new DefaultKafkaProducerFactory<>(producerConfigs());
+}
+ 
+@Bean
+KafkaTemplate<String, ProductCreatedEvent> kafkaTemplate() {
+return new KafkaTemplate<String, ProductCreatedEvent>(producerFactory());
+}
+```
+
+Take note that the KafkaTemplate object is created using the configuration defined in the ProducerFactory. This KafkaTemplate object is what we use to send messages to Kafka.
+
+To verify if my Kafka producer is configured to be idempotent, I will inject this KafkaTemplate object into my test class. This allows me to access the producer configuration properties directly from the KafkaTemplate object.
+
+By doing this, I can confirm that the KafkaTemplate object is indeed configured with the correct properties.
+
+---
+### Test Method for Idempotent Kafka Producer
+To test that Kafka producer is configured to be idempotent, I will create a separate Java class.
+```
+@SpringBootTest
+public class IdempotentProducerIntegrationTest {
+ 
+}
+```
+The test method in this class is going to be very simple, so annotating it with @SpringBootTest annotation is enough.
+
+Test Method for Idempotent Producer
+Next, I will create a new test method.
+```
+@SpringBootTest
+public class IdempotentProducerIntegrationTest {
+ 
+  @Test
+  void testProducerConfig_whenIdempotenceEnabled_assertsIdempotentProperties() {
+  
+  }
+ 
+}
+```
+
+As name of this test method suggests, I am going to test Producer configuration to make sure that it does have configuration properties that enable producer idempotence.
+
+Let’s start with the Arrange section.
+```
+@SpringBootTest
+public class IdempotentProducerIntegrationTest {
+ 
+@Autowired
+KafkaTemplate<String, ProductCreatedEvent> kafkaTemplate;
+ 
+@Test
+void testProducerConfig_whenIdempotenceEnabled_assertsIdempotentProperties() {
+  
+// Arrange
+  ProducerFactory<String, ProductCreatedEvent> producerFactory = kafkaTemplate.getProducerFactory();
+ 
+  }
+ 
+}
+```
+
+To get configuration properties that Kafka producer was configured with, I can inject into my test class KafkaTemplate object and use it to get ProducerFactory.
+
+I can now use ProducerFactory object to get configuration properties that it uses to create Kafka producer. I can do it in the Act section of my test method.
+```
+@Test
+void testProducerConfig_whenIdempotenceEnabled_assertsIdempotentProperties() {
+ 
+// Arrange
+ProducerFactory<String, ProductCreatedEvent> producerFactory = kafkaTemplate.getProducerFactory();
+ 
+// Act
+Map<String, Object> config = producerFactory.getConfigurationProperties();
+ 
+}
+```
+Now that I have access to configuration properties, I can verify those that make producer idempotent. I will do it in the Assert section of my test method.
+```
+@Test
+void testProducerConfig_whenIdempotenceEnabled_assertsIdempotentProperties() {
+ 
+// Arrange
+ProducerFactory<String, ProductCreatedEvent> producerFactory = kafkaTemplate.getProducerFactory();
+ 
+// Act
+Map<String, Object> config = producerFactory.getConfigurationProperties();
+ 
+// Assert
+Assertions.assertTrue((Boolean) config.get(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG));
+Assertions.assertTrue("all".equalsIgnoreCase((String) config.get(ProducerConfig.ACKS_CONFIG)));
+ 
+if (config.containsKey(ProducerConfig.RETRIES_CONFIG)) {
+Assertions.assertTrue(
+Integer.parseInt(config.get(ProducerConfig.RETRIES_CONFIG).toString()) > 0
+);
+}
+ 
+}
+```
+The test class is nearly complete. One final change I’ll make to it is to mock the KafkaAdmin bean. Please add the following two lines above the test method name:
+```
+@MockBean    
+KafkaAdmin kafkaAdmin;
+```
+The KafkaAdmin class in Spring Kafka simplifies administrative tasks related to Kafka topics, including creating, deleting, and inspecting topics within a Kafka cluster.
+
+When the Products Microservice Spring Boot application starts, it creates a new topic. Since this particular test method does not work with topics, I can mock the KafkaAdmin bean so that it does not communicate with the Kafka cluster. This approach will make my test method run faster.
+
+If you run this test method, it should successfully pass.
+
+---
+## Integration Testing - Kafka Consumer
+### Creating a new test class
+
+Create a new class in the root package `com.appsdeveloperblog.ws.emailnotification` and name it `ProductCreatedEventHandlerIntegrationTest`
+
+Annotate it like this
+```
+package com.appsdeveloperblog.ws.emailnotification;
+
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.test.context.EmbeddedKafka;
+
+@EmbeddedKafka
+@SpringBootTest(properties="spring.kafka.consumer.bootstrap-servers=${spring.embedded.kafka.brokers}")
+public class ProductCreatedEventHandlerIntegrationTest {
+
+}
+```
+
+---
+### The 'Arrange' section
+
+Add so it looks like this
+```
+package com.appsdeveloperblog.ws.emailnotification;
+
+import java.math.BigDecimal;
+import java.util.UUID;
+
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.kafka.test.context.EmbeddedKafka;
+
+import com.appsdeveloperblog.ws.core.ProductCreatedEvent;
+
+@EmbeddedKafka
+@SpringBootTest(properties="spring.kafka.consumer.bootstrap-servers=${spring.embedded.kafka.brokers}")
+public class ProductCreatedEventHandlerIntegrationTest {
+
+    @Test
+    public void testProductCreatedEventHandler_OnProductCreated_HandlesEvent() {
+    
+        // Arrange
+        ProductCreatedEvent productCreatedEvent = new ProductCreatedEvent();
+        productCreatedEvent.setPrice(new BigDecimal(10));
+        productCreatedEvent.setProductId(UUID.randomUUID().toString());
+        productCreatedEvent.setQuantity(1);
+        productCreatedEvent.setTitle("Test product");
+        
+        String messageId = UUID.randomUUID().toString();
+        String messageKey = productCreatedEvent.getProductId();
+        
+        ProducerRecord<String, Object> record = new ProducerRecord<>(
+            "product-created-events-topic",
+            messageKey,
+            productCreatedEvent);
+        
+        record.headers().add("messageId", messageId.getBytes());
+        record.headers().add(KafkaHeaders.RECEIVED_KEY, messageKey.getBytes());
+        
+        // Act
+
+        // Assert
+
+    }
+}
+```
+---
+### Mocking objects
+
+Above `@Test` write
+```
+@MockBean
+ProcessedEventRepository processedEventRepository;
+
+@MockBean
+RestTemplate restTemplate
+```
+After `record.headers` write
+```
+record.headers().add("messageId", messageId.getBytes());
+record.headers().add(KafkaHeaders.RECEIVED_KEY, messageKey.getBytes());
+
+ProcessedEventEntity processedEventEntity = new ProcessedEventEntity();
+when(processedEventRepository.findByMessageId(anyString())).thenReturn(processedEventEntity);
+when(processedEventRepository.save(any(ProcessedEventEntity.class))).thenReturn(null);
+
+String responseBody = "{\"key\":\"value\"}";
+HttpHeaders headers = new HttpHeaders();
+headers.setContentType(MediaType.APPLICATION_JSON);
+ResponseEntity<String> responseEntity = new ResponseEntity<>(responseBody, headers, HttpStatus.OK);
+
+when(restTemplate.exchange(
+    any(String.class),
+    any(HttpMethod.class),
+    isNull(), eq(String.class)
+))
+.thenReturn(responseEntity);
+
+// Act
+
+// Assert
+
+}
+
+}
+```
+---
+### The 'Act' and 'Assert' sections
+
+After `@MockBean` write
+```
+@MockBean
+RestTemplate restTemplate
+
+@Autowired
+kafkaTemplate<String, Object> kafkaTemplate;
+```
+Add to `@Test`
+```
+@Test
+public void testProductCreatedEventHandler_OnProductCreated_HandlesEvent() throws Exception{
+```
+Under `@Autowired` write
+```
+@Autowired
+kafkaTemplate<String, Object> kafkaTemplate;
+
+@SpyBean
+ProductCreatedEventHandler productCreatedEventHandler;
+```
+Now add to `// Act` and `// Assert`
+```
+// Act
+kafkaTemplate.send(record).get();
+
+// Assert
+ArgumentCaptor<String> messageIdCaptor = ArgumentCaptor.forClass(String.class);
+ArgumentCaptor<String> messageKeyCaptor = ArgumentCaptor.forClass(String.class);
+ArgumentCaptor<ProductCreatedEvent> eventCaptor = ArgumentCaptor.forClass(ProductCreatedEvent.class);
+
+verify(productCreatedEventHandler, timeout(5000).times(1)).handle(eventCaptor.capture(),
+    messageIdCaptor.capture(),
+    messageKeyCaptor.capture());
+
+assertEquals(messageId, messageIdCaptor.getValue());
+assertEquals(messageKey, messageKeyCaptor.getValue());
+assertEquals(productCreatedEvent.getProductId(), eventCaptor.getValue().getProductId());
+
+    }
+
+}
+```
+---
+### Testing Kafka Consumer - Trying how it works
+
+In `KafkaConsumerConfiguration.java` add 
+```
+config.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, environment.getProperty("spring.kafka.consumer.auto-offset-reset"));
+```
+Go to `applications.properties` and add
+```
+spring.kafka.consumer.auto-offset-reset=earliest
+```
+Right mouse click text editor and click Run As JUnit Test
+
+Expand JUnit panel and see a successfull green bar
+
+---
+## Saga design pattern with Apache Kafka
+### Coreography-Based Saga 
+
+![coreography-based-saga.png](../images/coreography-based-saga.png)
+
+---
+### Orchestration-Based Saga
+
+![orchestration-based-saga.png](../images/orchestration-based-saga.png)
+
+---
+### Quiz 9: Saga design pattern
+
+**Q1: In the context of microservices, what is a Saga?**  
+**A: A sequence of local transactions.**  
+A Saga is a sequence of local transactions where each transaction updates data within a single service. The Saga pattern helps maintain data consistency across multiple services in a microservices architecture, ensuring that even if one transaction fails, compensating actions can be taken to preserve system integrity.
+
+**Q2: In the Orchestration Saga pattern, who is responsible for coordinating the steps of a distributed transaction?**  
+**A: A central orchestrator.**  
+In the Orchestration Saga pattern, a central orchestrator is responsible for managing and coordinating all steps of the distributed transaction. The orchestrator ensures that each local transaction is executed in the correct sequence and triggers compensating actions if a failure occurs.
+
+**Q3: What is the primary difference between Orchestration and Choreography in a microservices architecture?**  
+**A: Orchestration involves a central controller/orchestrator while Choreography does not.**  
+In an Orchestration design pattern, a central controller (orchestrator) manages and coordinates how different microservices interact to complete a process. In contrast, Choreography relies on each microservice to communicate through events without a central controller, enabling more decentralized and autonomous coordination.
+
+**Q4: In which Saga pattern is each local transaction publishing an event that triggers the next local transaction in the saga?**  
+**A: Choreography Saga.**  
+In a Choreography Saga, each local transaction publishes an event that may trigger the next local transaction in the saga. This pattern does not rely on a central coordinator; instead, microservices communicate through events to manage the workflow autonomously.
+
+**Q5: Which Saga pattern would be more suitable for complex business transactions that require centralized control and decision making?**  
+**A: Orchestration Saga.**  
+The Orchestration Saga pattern is more suitable for complex business transactions that require centralized control and decision-making. In this pattern, a central orchestrator coordinates and guides the process, overseeing the execution of each local transaction and making decisions based on their outcomes.
+
+---
+### Reserve Product in Stock - Introduction
