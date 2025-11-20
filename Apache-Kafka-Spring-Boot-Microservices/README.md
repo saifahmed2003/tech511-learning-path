@@ -186,7 +186,15 @@ All from the very beginning, to help you learn how to create Event-Driven Micros
     - [Coreography-Based Saga](#coreography-based-saga)
     - [Orchestration-Based Saga](#orchestration-based-saga)
     - [Quiz 9: Saga design pattern](#quiz-9-saga-design-pattern)
-    - [Reserve Product in Stock - Introduction](#reserve-product-in-stock---introduction)
+    - [Source Code(Saga) + Base project overview](#source-codesaga--base-project-overview)
+    - [Publish OrderCreatedEvent](#publish-ordercreatedevent)
+    - [Publish OrderCreatedEvent - Trying how it works](#publish-ordercreatedevent---trying-how-it-works)
+    - [Handle OrderCreatedEvent](#handle-ordercreatedevent)
+    - [Send ReserveProductCommand](#send-reserveproductcommand)
+    - [Save order status to a History database table](#save-order-status-to-a-history-database-table)
+    - [Handle ReserveProductCommand](#handle-reserveproductcommand)
+    - [Reserve Product in Stock - business logic](#reserve-product-in-stock---business-logic)
+    - [Publish the ProductReservedEvent](#publish-the-productreservedevent)
 
 ---
 ## Introduction to Apache Kafka
@@ -3654,4 +3662,383 @@ In a Choreography Saga, each local transaction publishes an event that may trigg
 The Orchestration Saga pattern is more suitable for complex business transactions that require centralized control and decision-making. In this pattern, a central orchestrator coordinates and guides the process, overseeing the execution of each local transaction and making decisions based on their outcomes.
 
 ---
-### Reserve Product in Stock - Introduction
+### Source Code(Saga) + Base project overview
+
+Download IntelliJ IDEA
+
+Download the source code
+
+Saga example
+* a simplified example of the Ordering system
+* the foocus is on Saga (orchestration-based) only
+* Communication between Microservices
+
+---
+### Publish OrderCreatedEvent
+
+in the core package inside `dto` create a new package called events
+
+inside of events package create a new class `OrderCreatedEvent`
+
+Annotate
+```
+package com.appsdeveloperblog.core.dto.events;
+
+import java.util.UUID;
+
+public class OrderCreatedEvent {
+    private UUID orderId;
+    private UUID customerId;
+    private UUID productId;
+    private Integer productQuantity;
+
+    public OrderCreatedEvent() {
+    }
+
+    public OrderCreatedEvent(UUID orderId, UUID customerId, UUID productId, Integer productQuantity) {
+        this.orderId = orderId;
+        this.customerId = customerId;
+        this.productId = productId;
+        this.productQuantity = productQuantity;
+    }
+}
+```
+Then generate getters and setters by selecting all fields
+
+Open `application.properties` and add
+```
+spring.kafka.consumer.properties.spring.json.trusted.packages=com.appsdeveloperblog.core.*
+
+orders.events.topic.name=orders-events
+```
+
+Open `OrderServiceImpl.java` and add to `@Override`
+```
+    @Override
+    public Order placeOrder(Order order) {
+        OrderEntity entity = new OrderEntity();
+        entity.setCustomerId(order.getCustomerId());
+        entity.setProductId(order.getProductId());
+        entity.setProductQuantity(order.getProductQuantity());
+        entity.setStatus(OrderStatus.CREATED);
+        orderRepository.save(entity);
+
+        OrderCreatedEvent placedOrder = new OrderCreatedEvent(
+                entity.getId(),
+                entity.getCustomerId(),
+                order.getProductId(),
+                order.getProductQuantity()
+        );
+        kafkaTemplate.send(ordersEventsTopicName, placedOrder);
+
+        return new Order(
+                entity.getId(),
+                entity.getCustomerId(),
+                entity.getProductId(),
+                entity.getProductQuantity(),
+                entity.getStatus());
+    }
+}
+```
+Add to `@Service`
+```
+@Service
+public class OrderServiceImpl implements OrderService {
+    private final OrderRepository orderRepository;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final String ordersEventsTopicName;
+
+    public OrderServiceImpl(OrderRepository orderRepository,
+                           KafkaTemplate<String, Object> kafkaTemplate,
+                           @Value("${orders.events.topic.name}") String ordersEventsTopicName) {
+        this.orderRepository = orderRepository;
+        this.kafkaTemplate = kafkaTemplate;
+        this.ordersEventsTopicName = ordersEventsTopicName;
+    }
+```
+Open `KafkaConfig.java` and annotate
+```
+package com.appsdeveloperblog.orders.config;
+
+import ...
+
+@Configuration
+public class KafkaConfig {
+
+    @Value("${orders.events.topic.name}")
+    private String ordersEventsTopicName;
+    private final static Integer TOPIC_REPLICATION_FACTOR=3;
+    private final static Integer TOPIC_PARTITIONS=3;
+
+    @Bean
+    KafkaTemplate<String, Object> kafkaTemplate(ProducerFactory<String, Object> producerFactory) {
+        return new KafkaTemplate<>(producerFactory);
+    }
+
+    @Bean
+    NewTopic createOrdersEventsTopic() {
+        return TopicBuilder.name(ordersEventsTopicName)
+                .partitions(TOPIC_PARTITIONS)
+                .replicas(TOPIC_REPLICATION_FACTOR)
+                .build();
+    }
+}
+```
+---
+### Publish OrderCreatedEvent - Trying how it works
+
+Navigate to the source code folder and run
+```
+docker compose up
+```
+```
+cd core
+```
+```
+mvn clean install
+```
+Right mouse click `OrdersServiceApplication` and Run it
+
+Right mouse click `ProductsServiceApplication` and Run it
+
+Go to Postman and create a new HTTP `POST` Request sent to ProductsMicroservice running on local host. 
+
+The link should be
+```
+http://localhost:8081/products
+```
+Click the body tab, select raw and JSON
+
+Provide a JSON payload by typing the following code:
+```
+{
+  "title": "iPhone 11",
+  "price": 1500,
+  "quantity": 5
+}
+```
+Click Send to send the request and you should see a successful response with the productId 
+
+Create a new tab and create a new `POST` request
+
+The link should be
+```
+http://localhost:8080/products
+```
+Click the body tab, select raw and JSON
+
+Provide a JSON payload by typing the following code:
+```
+{
+    "productId":"890f4749-72b5-4320-9d24-24f69182b244",
+    "productQuantity":1,
+    "customerId":"890f4749-72b5-4320-9d24-24f69182b00d"
+}
+```
+
+`cd` to the kafka folder
+
+```
+cd bin
+```
+```
+./kafka-console-consumer.sh --topic orders-events --bootstrap-server localhost:9092
+```
+Click Send to send the request and you should see a successful response in the terminal
+
+---
+### Handle OrderCreatedEvent
+
+Right mouse click `com.appsdeveloperblog.orders` and create a new package `com.appsdeveloperblog.orders.saga`
+
+From this new package create a new class called `OrderSaga`
+
+Annotate
+```
+package com.appsdeveloperblog.orders.saga;
+
+import com.appsdeveloperblog.core.dto.events.OrderCreatedEvent;
+import org.springframework.kafka.annotation.KafkaHandler;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.stereotype.Component;
+
+@Component
+@KafkaListener(topics={"${orders.events.topic.name}"})
+public class OrderSaga {
+
+    @KafkaHandler
+    public void handleEvent(@Payload OrderCreatedEvent event) {
+
+    }
+}
+```
+---
+### Send ReserveProductCommand
+
+in the core package inside `dto` create a new package called `commands`
+
+inside of events package create a new class `ReserveProductCommand`
+
+```
+package com.appsdeveloperblog.core.dto.commands;
+
+import java.util.UUID;
+
+public class ReserveProductCommand {
+    private UUID productId;
+    private Integer productQuantity;
+    private UUID orderId;
+
+    public ReserveProductCommand() {
+    }
+
+    public ReserveProductCommand(UUID productId, Integer productQuantity, UUID orderId) {
+        this.productId = productId;
+        this.productQuantity = productQuantity;
+        this.orderId = orderId;
+    }
+}
+```
+
+Generate getters and setters by selecting all fields
+
+Right mouse click `core` and open in terminal and run
+```
+mvn install
+```
+Add to `OrderSaga.java` in `@KafkaHandler`
+
+```
+@Component
+@KafkaListener(topics={"${orders.events.topic.name}"})
+public class OrderSaga {
+
+    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final String productsCommandsTopicName;
+
+    public OrderSaga(KafkaTemplate<String, Object> kafkaTemplate,
+                     @Value("${products.commands.topic.name}") String productsCommandsTopicName) {
+        this.kafkaTemplate = kafkaTemplate;
+        this.productsCommandsTopicName = productsCommandsTopicName;
+    }
+
+    @KafkaHandler
+    public void handleEvent(@Payload OrderCreatedEvent event) {
+
+        ReserveProductCommand command = new ReserveProductCommand(
+                event.getProductId(),
+                event.getProductQuantity(),
+                event.getOrderId()
+        );
+
+        kafkaTemplate.send(productsCommandsTopicName,command);
+    }
+}
+```
+Add to `application.properties`
+
+```
+products.commands.topic.name=products-commands
+```
+Open `KafkaConfig` and add
+```
+@Value("${products.commands.topic.name}")
+private String productsCommandsTopicName;
+```
+and a new `@Bean`
+```
+@Bean
+NewTopic createProductsCommandsTopic(){
+    return TopicBuilder.name(productsCommandsTopicName)
+            .partitions(TOPIC_PARTITIONS)
+            .replicas(TOPIC_REPLICATION_FACTOR)
+            .build();
+}
+
+}
+```
+---
+### Save order status to a History database table
+
+Add to `OrderSaga.java` 
+```
+private final KafkaTemplate<String, Object> kafkaTemplate;
+private final String productsCommandsTopicName;
+private final OrderHistoryService orderHistoryService;
+
+public OrderSaga(KafkaTemplate<String, Object> kafkaTemplate,
+                    @Value("${products.commands.topic.name}") String productsCommandsTopicName,
+                    OrderHistoryService orderHistoryService) {
+    this.kafkaTemplate = kafkaTemplate;
+    this.productsCommandsTopicName = productsCommandsTopicName;
+    this.orderHistoryService = orderHistoryService;
+}
+
+```
+and at the bottom
+```
+kafkaTemplate.send(productsCommandsTopicName,command);
+orderHistoryService.add(event.getOrderId(), OrderStatus.CREATED);
+```
+---
+### Handle ReserveProductCommand
+
+In the service package create a new subpackage called `handler`
+
+In `handler` create a new class called `ProductCommandsHandler`
+
+Annotate
+```
+products.commands.topic.name=products-commands
+```
+
+In `application.properties` add
+```
+package com.appsdeveloperblog.products.service.handler;
+
+import com.appsdeveloperblog.core.dto.commands.ReserveProductCommand;
+import org.springframework.kafka.annotation.KafkaHandler;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.stereotype.Component;
+
+@Component // no usages
+@KafkaListener(topics="${products.commands.topic.name}")
+public class ProductCommandsHandler {
+
+    @KafkaHandler // no usages
+    public void handleCommand(@Payload ReserveProductCommand command) {
+
+    }
+}
+```
+---
+### Reserve Product in Stock - business logic
+Add
+```
+@Component // no usages
+@KafkaListener(topics="${products.commands.topic.name}")
+public class ProductCommandsHandler {
+
+    private final ProductService productService; // 2 usages
+    private final Logger logger = LoggerFactory.getLogger(this.getClass()); // 1 usage
+
+    public ProductCommandsHandler(ProductService productService) { // no usages
+        this.productService = productService;
+    }
+
+    @KafkaHandler // no usages
+    public void handleCommand(@Payload ReserveProductCommand command) {
+
+        try {
+            Product desiredProduct = new Product(command.getProductId(), command.getProductQuantity());
+            Product reservedProduct = productService.reserve(desiredProduct, command.getOrderId());
+        } catch (Exception e) {
+            logger.error(e.getLocalizedMessage(), e);
+        }
+    }
+}
+```
+---
+### Publish the ProductReservedEvent
